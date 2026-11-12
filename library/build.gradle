@@ -1,4 +1,5 @@
 apply plugin: 'com.android.library'
+apply plugin: 'maven-publish'
 apply from : '../common.gradle'
 
 android {
@@ -12,6 +13,12 @@ android {
         abortOnError false
     }
 
+    publishing {
+        singleVariant('release') {
+            withSourcesJar()
+        }
+    }
+
     // 支持 JDK 1.8 及以上
     compileOptions {
         targetCompatibility JavaVersion.VERSION_1_8
@@ -22,6 +29,19 @@ android {
         // aar 输出文件名配置
         variant.outputs.configureEach { output ->
             outputFileName = "${rootProject.name}-${android.defaultConfig.versionName}.aar"
+        }
+    }
+}
+
+afterEvaluate {
+    publishing {
+        publications {
+            release(MavenPublication) {
+                from components.release
+                groupId = 'com.github.zzlfeng'
+                artifactId = 'Logcat'
+                version = android.defaultConfig.versionName
+            }
         }
     }
 }
