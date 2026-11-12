@@ -3,6 +3,8 @@ apply from : '../common.gradle'
 
 android {
 
+    namespace 'com.hjq.logcat.demo'
+
     defaultConfig {
         applicationId "com.hjq.logcat.demo"
     }

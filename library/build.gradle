@@ -3,10 +3,12 @@ apply from : '../common.gradle'
 
 android {
 
+    namespace 'com.hjq.logcat'
+
     // 资源前缀限制
     resourcePrefix "logcat_"
 
-    lintOptions {
+    lint {
         abortOnError false
     }
 
@@ -22,12 +24,6 @@ android {
             outputFileName = "${rootProject.name}-${android.defaultConfig.versionName}.aar"
         }
     }
-}
-
-afterEvaluate {
-    // 排除 BuildConfig.class
-    generateReleaseBuildConfig.enabled = false
-    generateDebugBuildConfig.enabled = false
 }
 
 dependencies {
@@ -49,7 +45,7 @@ tasks.withType(Javadoc).configureEach {
 
 tasks.register('sourcesJar', Jar) {
     from android.sourceSets.main.java.srcDirs
-    classifier = 'sources'
+    archiveClassifier = 'sources'
 }
 
 tasks.register('javadoc', Javadoc) {
@@ -59,7 +55,7 @@ tasks.register('javadoc', Javadoc) {
 
 tasks.register('javadocJar', Jar) {
     dependsOn javadoc
-    classifier = 'javadoc'
+    archiveClassifier = 'javadoc'
     from javadoc.destinationDir
 }
 
