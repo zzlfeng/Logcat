@@ -22,4 +22,24 @@ final class LogLevel {
 
     /** 错误日志 */
     static final String ERROR = "E";
+
+    /**
+     * 获取日志等级的严重度序号（V=0 D=1 I=2 W=3 E=4），未知等级返回 -1
+     */
+    static int getLevelIndex(String level) {
+        switch (level) {
+            case VERBOSE:
+                return 0;
+            case DEBUG:
+                return 1;
+            case INFO:
+                return 2;
+            case WARN:
+                return 3;
+            case ERROR:
+                return 4;
+            default:
+                return -1;
+        }
+    }
 }

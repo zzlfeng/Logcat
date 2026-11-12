@@ -8,6 +8,8 @@
 
 * [设置 Logcat 默认筛选条件](#设置-logcat-默认筛选条件)
 
+* [日志等级过滤的两种模式](#日志等级过滤的两种模式)
+
 * [设置 Logcat 日志过滤规则](#设置-logcat-日志过滤规则)
 
 * [设置显示所有应用打印的日志](#设置显示所有应用打印的日志)
@@ -95,6 +97,33 @@
         <meta-data
             android:name="LogcatDefaultLogLevel"
             android:value="E" />
+
+    </application>
+
+</manifest>
+```
+
+#### 日志等级过滤的两种模式
+
+* 等级过滤支持两种模式，**长按**日志等级按钮即可切换，切换后会自动保存，下次打开依然生效
+
+    * 仅当前等级（默认）：例如选中 `Info` 只显示 `Info` 的日志，`Warn`、`Error` 不会显示，此时按钮显示为 `I`
+
+    * 当前等级及以上：例如选中 `Info` 会显示 `Info`、`Warn`、`Error` 的日志，和 Android Studio 的 Logcat 过滤语义一致，此时按钮显示为 `I+`
+
+* 选中 `Verbose` 时两种模式效果相同，都会显示全部日志
+
+* 如果需要修改默认的模式，可在清单文件中加入以下配置（不配置则默认为仅当前等级）：
+
+```xml
+<manifest>
+
+    <application>
+
+        <!-- 等级过滤模式（true 为当前等级及以上，false 为仅当前等级） -->
+        <meta-data
+            android:name="LogcatDefaultLogLevelMode"
+            android:value="true" />
 
     </application>
 

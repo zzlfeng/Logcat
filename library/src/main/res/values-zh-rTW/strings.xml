@@ -21,6 +21,8 @@
     <string name="logcat_capture">日志捕獲開關</string>
     <string name="logcat_save">保存日志</string>
     <string name="logcat_level">日志等級過濾</string>
+    <string name="logcat_level_mode_exact">等級過濾：僅顯示當前等級（長按切換）</string>
+    <string name="logcat_level_mode_above">等級過濾：顯示當前等級及以上（長按切換）</string>
     <string name="logcat_empty">清空日志</string>
     <string name="logcat_close">關閉顯示</string>
 

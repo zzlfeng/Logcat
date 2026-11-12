@@ -65,6 +65,9 @@ public final class LogcatActivity extends AppCompatActivity
 
     private String mLogLevel = LogLevel.VERBOSE;
 
+    /** 等级过滤是否包含更高等级的日志 */
+    private boolean mLogLevelAndAbove;
+
     /** 暂停输出日志标记 */
     private boolean mPauseLogFlag;
 
@@ -161,6 +164,9 @@ public final class LogcatActivity extends AppCompatActivity
             mSearchView.setText(searchKey);
         }
 
+        mLogLevelAndAbove = LogcatConfig.getLogLevelModeConfig();
+        mAdapter.setLogLevelAndAbove(mLogLevelAndAbove);
+
         String logLevel = LogcatConfig.getLogLevelConfig();
         setLogLevel(logLevel);
     }
@@ -205,8 +211,10 @@ public final class LogcatActivity extends AppCompatActivity
             LogcatUtils.toast(this, R.string.logcat_capture);
         } else if (v == mSaveView) {
             LogcatUtils.toast(this, R.string.logcat_save);
-        } else if (v == mLevelView) {
-            LogcatUtils.toast(this, R.string.logcat_level);
+        } else if (v == mLevelLayout) {
+            setLogLevelAndAbove(!mLogLevelAndAbove);
+            LogcatUtils.toast(this, mLogLevelAndAbove ?
+                    R.string.logcat_level_mode_above : R.string.logcat_level_mode_exact);
         } else if (v == mClearView) {
             LogcatUtils.toast(this, R.string.logcat_empty);
         } else if (v == mHideView) {
@@ -360,6 +368,13 @@ public final class LogcatActivity extends AppCompatActivity
         refreshLogLevelLayout();
     }
 
+    private void setLogLevelAndAbove(boolean andAbove) {
+        mLogLevelAndAbove = andAbove;
+        mAdapter.setLogLevelAndAbove(andAbove);
+        LogcatConfig.setLogLevelModeConfig(andAbove);
+        refreshLogLevelLayout();
+    }
+
     private void refreshLogLevelLayout() {
         String[] arrayLogLevel;
         if (LogcatUtils.isPortrait(this)) {
@@ -367,25 +382,11 @@ public final class LogcatActivity extends AppCompatActivity
         } else {
             arrayLogLevel = ARRAY_LOG_LEVEL;
         }
-        switch (mLogLevel) {
-            case LogLevel.VERBOSE:
-                mLevelView.setText(arrayLogLevel[0]);
-                break;
-            case LogLevel.DEBUG:
-                mLevelView.setText(arrayLogLevel[1]);
-                break;
-            case LogLevel.INFO:
-                mLevelView.setText(arrayLogLevel[2]);
-                break;
-            case LogLevel.WARN:
-                mLevelView.setText(arrayLogLevel[3]);
-                break;
-            case LogLevel.ERROR:
-                mLevelView.setText(arrayLogLevel[4]);
-                break;
-            default:
-                break;
+        int index = LogLevel.getLevelIndex(mLogLevel);
+        if (index < 0) {
+            return;
         }
+        mLevelView.setText(mLogLevelAndAbove ? arrayLogLevel[index] + "+" : arrayLogLevel[index]);
     }
 
     private class LogRunnable implements Runnable {

@@ -43,6 +43,17 @@ final class LogcatConfig {
         sConfig.edit().putString(LogcatContract.SP_KEY_LOGCAT_LOG_LEVEL, logLevel).apply();
     }
 
+    static boolean getLogLevelModeConfig() {
+        Boolean defaultMode = LogcatUtils.getMetaBooleanData(sApplicationContext,
+                LogcatContract.META_DATA_LOGCAT_DEFAULT_LOG_LEVEL_MODE);
+        return sConfig.getBoolean(LogcatContract.SP_KEY_LOGCAT_LOG_LEVEL_MODE,
+                defaultMode != null && defaultMode);
+    }
+
+    static void setLogLevelModeConfig(boolean andAbove) {
+        sConfig.edit().putBoolean(LogcatContract.SP_KEY_LOGCAT_LOG_LEVEL_MODE, andAbove).apply();
+    }
+
     static String getSearchKeyConfig() {
         String defaultSearchKey = LogcatUtils.getMetaStringData(sApplicationContext,
                 LogcatContract.META_DATA_LOGCAT_DEFAULT_SEARCH_KEY);

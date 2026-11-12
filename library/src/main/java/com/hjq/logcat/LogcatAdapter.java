@@ -57,6 +57,8 @@ final class LogcatAdapter extends RecyclerView.Adapter<LogcatAdapter.ViewHolder>
 
     private String mKeyword = "";
     private String mLogLevel = LogLevel.VERBOSE;
+    /** 等级过滤是否包含更高等级的日志 */
+    private boolean mLogLevelAndAbove;
     private boolean mLogAutoMergePrint = true;
 
     private RecyclerView mRecyclerView;
@@ -201,6 +203,12 @@ final class LogcatAdapter extends RecyclerView.Adapter<LogcatAdapter.ViewHolder>
         notifyDataSetChanged();
     }
 
+    void setLogLevelAndAbove(boolean andAbove) {
+        mLogLevelAndAbove = andAbove;
+        filterData();
+        notifyDataSetChanged();
+    }
+
     void onItemClick(int position) {
         LogcatInfo info = getItem(position);
         boolean expand = mExpandSet.get(info.hashCode());
@@ -228,7 +236,17 @@ final class LogcatAdapter extends RecyclerView.Adapter<LogcatAdapter.ViewHolder>
 
     private boolean isConform(LogcatInfo info) {
         return (TextUtils.isEmpty(mKeyword) || info.toString(mContext).toLowerCase().contains(mKeyword.toLowerCase())) &&
-                (LogLevel.VERBOSE.equals(mLogLevel) || info.getLevel().equals(mLogLevel));
+                isLevelConform(info);
+    }
+
+    private boolean isLevelConform(LogcatInfo info) {
+        if (LogLevel.VERBOSE.equals(mLogLevel)) {
+            return true;
+        }
+        if (mLogLevelAndAbove) {
+            return LogLevel.getLevelIndex(info.getLevel()) >= LogLevel.getLevelIndex(mLogLevel);
+        }
+        return info.getLevel().equals(mLogLevel);
     }
 
     /**
