@@ -63,20 +63,19 @@ final class LogcatManager {
      * 继续捕捉
      */
     static void resume() {
-        FLAG_WORK = true;
         final Callback callback = sCallback;
-        List<LogcatInfo> backup;
         synchronized (LOG_BACKUP) {
-            if (LOG_BACKUP.isEmpty()) {
-                return;
+            // 锁内排空并投递，保证备份日志先于新日志；回调仅过滤+入队，锁内投递廉价无阻塞
+            while (!LOG_BACKUP.isEmpty()) {
+                List<LogcatInfo> backup = new ArrayList<>(LOG_BACKUP);
+                LOG_BACKUP.clear();
+                if (callback != null) {
+                    for (LogcatInfo info : backup) {
+                        callback.onReceiveLog(info);
+                    }
+                }
             }
-            backup = new ArrayList<>(LOG_BACKUP);
-            LOG_BACKUP.clear();
-        }
-        if (callback != null) {
-            for (LogcatInfo info : backup) {
-                callback.onReceiveLog(info);
-            }
+            FLAG_WORK = true;
         }
     }
 
@@ -201,14 +200,15 @@ final class LogcatManager {
                     if (info == null) {
                         continue;
                     }
-                    if (!FLAG_WORK) {
-                        synchronized (LOG_BACKUP) {
+                    // 检查与入备在同一把锁内，与 resume 的排空+置位互斥，避免丢日志或插队
+                    synchronized (LOG_BACKUP) {
+                        if (!FLAG_WORK) {
                             LOG_BACKUP.addLast(info);
                             if (LOG_BACKUP.size() > LOG_BACKUP_MAX_COUNT) {
                                 LOG_BACKUP.removeFirst();
                             }
+                            continue;
                         }
-                        continue;
                     }
 
                     final Callback callback = sCallback;
