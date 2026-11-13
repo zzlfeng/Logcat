@@ -247,8 +247,10 @@ public final class LogcatActivity extends AppCompatActivity
     @Override
     public void onClick(View v) {
         if (v == mSaveView) {
-            // 主线程先快照，避免后台线程迭代活列表引发并发修改
-            final List<LogcatInfo> data = new ArrayList<>(mAdapter.getShowData());
+            final List<LogcatInfo.Snapshot> data = new ArrayList<>(mAdapter.getShowData().size());
+            for (LogcatInfo info : mAdapter.getShowData()) {
+                data.add(info.snapshot());
+            }
             new Thread(() -> {
                 String message;
                 try {

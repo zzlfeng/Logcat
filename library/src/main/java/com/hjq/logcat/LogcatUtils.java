@@ -150,7 +150,7 @@ final class LogcatUtils {
     /**
      * 保存日志到本地
      */
-    static File saveLogToFile(Context context, List<LogcatInfo> data) throws IOException {
+    static File saveLogToFile(Context context, List<LogcatInfo.Snapshot> data) throws IOException {
         File directory = context.getExternalFilesDir(FILE_TYPE);
         if (directory == null) {
             throw new IOException("The file does not exist.");
@@ -169,7 +169,7 @@ final class LogcatUtils {
             file.createNewFile();
         }
         try (BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(file, false), CHARSET_UTF_8))) {
-            for (LogcatInfo info : data) {
+            for (LogcatInfo.Snapshot info : data) {
                 writer.write(info.toString().replace("\n", "\r\n") + "\r\n\r\n");
             }
             writer.flush();

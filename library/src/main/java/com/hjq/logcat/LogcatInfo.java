@@ -187,6 +187,28 @@ final class LogcatInfo {
         content = (content.startsWith(LINE_SPACE) ? "" : LINE_SPACE) + content + LINE_SPACE + text;
     }
 
+    Snapshot snapshot() {
+        return new Snapshot(this);
+    }
+
+    static final class Snapshot {
+
+        private final String time;
+        private final String tag;
+        private final String content;
+
+        private Snapshot(LogcatInfo info) {
+            time = info.time;
+            tag = info.tag;
+            content = info.content;
+        }
+
+        @Override
+        public String toString() {
+            return time + SPACE + tag + SPACE + content;
+        }
+    }
+
     @Override
     public String toString() {
         return time + SPACE + tag + SPACE + content;
