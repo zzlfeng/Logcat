@@ -56,31 +56,43 @@ final class LogcatConfig {
     }
 
     /**
-     * 悬浮窗位置：优先记忆，屏幕尺寸变化（旋转/换设备）时记忆失效回落默认
+     * 悬浮窗位置记录：x,y,可见区域宽,可见区域高,dpi,窗口模式，记录无效时返回 null
      */
-    static int[] getFloatingWindowLocationConfig(int screenWidth, int screenHeight) {
+    static int[] getFloatingWindowLocationConfig() {
         String saved = sConfig.getString(LogcatContract.SP_KEY_LOGCAT_FLOATING_WINDOW_LOCATION, null);
-        if (saved != null) {
-            String[] parts = saved.split(",");
-            if (parts.length == 5) {
-                try {
-                    if (Integer.parseInt(parts[3]) == screenWidth && Integer.parseInt(parts[4]) == screenHeight) {
-                        return new int[]{Integer.parseInt(parts[0]), Integer.parseInt(parts[1]), Integer.parseInt(parts[2])};
-                    }
-                } catch (NumberFormatException ignored) {
-                    // 记录损坏时回落默认位置
-                }
-            }
+        if (saved == null) {
+            return null;
         }
-        return getFloatingWindowDefaultLocation();
+        String[] parts = saved.split(",");
+        if (parts.length != 6) {
+            return null;
+        }
+        try {
+            int x = Integer.parseInt(parts[0]);
+            int y = Integer.parseInt(parts[1]);
+            int visibleWidth = Integer.parseInt(parts[2]);
+            int visibleHeight = Integer.parseInt(parts[3]);
+            int densityDpi = Integer.parseInt(parts[4]);
+            int mode = Integer.parseInt(parts[5]);
+            if (visibleWidth > 0 && visibleHeight > 0 && densityDpi > 0) {
+                return new int[]{x, y, visibleWidth, visibleHeight, densityDpi, mode};
+            }
+        } catch (NumberFormatException ignored) {
+            // 记录损坏时按无记忆处理
+        }
+        return null;
     }
 
-    static void setFloatingWindowLocationConfig(int gravity, int x, int y, int screenWidth, int screenHeight) {
+    /**
+     * 记录的是可见区域坐标系下的绝对坐标，可见区域尺寸、dpi 或窗口模式变化时由调用方判失效
+     */
+    static void setFloatingWindowLocationConfig(int x, int y, int visibleWidth, int visibleHeight,
+            int densityDpi, int mode) {
         sConfig.edit().putString(LogcatContract.SP_KEY_LOGCAT_FLOATING_WINDOW_LOCATION,
-                gravity + "," + x + "," + y + "," + screenWidth + "," + screenHeight).apply();
+                x + "," + y + "," + visibleWidth + "," + visibleHeight + "," + densityDpi + "," + mode).apply();
     }
 
-    private static int[] getFloatingWindowDefaultLocation() {
+    static int[] getFloatingWindowDefaultLocation() {
         int gravity = parseGravity(LogcatUtils.getMetaStringData(sApplicationContext,
                 LogcatContract.META_DATA_LOGCAT_FLOATING_WINDOW_GRAVITY));
         return new int[]{gravity,
