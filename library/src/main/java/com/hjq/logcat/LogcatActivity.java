@@ -38,6 +38,7 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  *    author : Android 轮子哥
@@ -78,6 +79,8 @@ public final class LogcatActivity extends AppCompatActivity
     /** 待显示日志队列（reader 线程入队，主线程批量消费） */
     private final Queue<LogcatInfo> mPendingLogs = new ConcurrentLinkedQueue<>();
     private final Handler mMainHandler = new Handler(Looper.getMainLooper());
+    /** 是否有待执行的日志消费任务（0 无 1 有），用于入队踢一脚且保证单消费链 */
+    private final AtomicInteger mDrainScheduled = new AtomicInteger();
 
     private String mLogLevel = LogLevel.VERBOSE;
 
@@ -214,8 +217,11 @@ public final class LogcatActivity extends AppCompatActivity
             return;
         }
 
-        // 只入队，由主线程定时批量消费，避免逐条 post 造成主线程消息洪水
+        // 只入队，由主线程批量消费；仅当没有待执行的处理时才安排一次，避免逐条 post
         mPendingLogs.offer(info);
+        if (mDrainScheduled.compareAndSet(0, 1)) {
+            mMainHandler.post(mDrainRunnable);
+        }
     }
 
     @Override
@@ -417,10 +423,11 @@ public final class LogcatActivity extends AppCompatActivity
         mLevelView.setText(mLogLevelAndAbove ? arrayLogLevel[index] + "+" : arrayLogLevel[index]);
     }
 
-    /** 批量消费待显示日志（主线程） */
+    /** 批量消费待显示日志（主线程，仅在有积压时被安排） */
     private final Runnable mDrainRunnable = new Runnable() {
         @Override
         public void run() {
+            mDrainScheduled.set(0);
             List<LogcatInfo> batch = new ArrayList<>();
             LogcatInfo info;
             while ((info = mPendingLogs.poll()) != null) {
@@ -433,17 +440,22 @@ public final class LogcatActivity extends AppCompatActivity
             if (!batch.isEmpty()) {
                 mAdapter.addItems(batch);
             }
-            mMainHandler.postDelayed(this, LOG_DRAIN_INTERVAL_MILLIS);
+            // 消费期间又有新日志入队时续跑；CAS 保证不会叠加多条消费链
+            if (!mPendingLogs.isEmpty() && mDrainScheduled.compareAndSet(0, 1)) {
+                mMainHandler.postDelayed(this, LOG_DRAIN_INTERVAL_MILLIS);
+            }
         }
     };
 
     private void startLogDrain() {
+        mDrainScheduled.set(1);
         mMainHandler.removeCallbacks(mDrainRunnable);
         mMainHandler.post(mDrainRunnable);
     }
 
     private void stopLogDrain() {
         mMainHandler.removeCallbacks(mDrainRunnable);
+        mDrainScheduled.set(0);
     }
 
     /**
