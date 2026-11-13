@@ -21,7 +21,6 @@ import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.RecyclerView;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -55,7 +54,7 @@ final class LogcatAdapter extends RecyclerView.Adapter<LogcatAdapter.ViewHolder>
     private final Context mContext;
 
     private String mKeyword = "";
-    private String mKeywordLower = "";
+    private Pattern mKeywordPattern;
     private String mLogLevel = LogLevel.VERBOSE;
     /** 等级过滤是否包含更高等级的日志 */
     private boolean mLogLevelAndAbove;
@@ -219,7 +218,8 @@ final class LogcatAdapter extends RecyclerView.Adapter<LogcatAdapter.ViewHolder>
 
     void setKeyword(String keyword) {
         mKeyword = keyword;
-        mKeywordLower = keyword.toLowerCase(Locale.ROOT);
+        mKeywordPattern = keyword.isEmpty() ? null :
+                Pattern.compile(Pattern.quote(keyword), Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
         filterData();
         notifyDataSetChanged();
     }
@@ -262,7 +262,7 @@ final class LogcatAdapter extends RecyclerView.Adapter<LogcatAdapter.ViewHolder>
     }
 
     private boolean isConform(LogcatInfo info) {
-        return (TextUtils.isEmpty(mKeyword) || info.toString(mContext).toLowerCase(Locale.ROOT).contains(mKeywordLower)) &&
+        return (mKeywordPattern == null || mKeywordPattern.matcher(info.toString(mContext)).find()) &&
                 isLevelConform(info);
     }
 
@@ -331,19 +331,18 @@ final class LogcatAdapter extends RecyclerView.Adapter<LogcatAdapter.ViewHolder>
         private void onBindView(LogcatInfo info, int position) {
             String content = info.toString(mContext);
             SpannableString spannable = new SpannableString(content);
-            if (mKeyword != null && !mKeyword.isEmpty()) {
-                String contentLower = content.toLowerCase(Locale.ROOT);
-                int index = contentLower.indexOf(mKeywordLower);
-                while (index > -1) {
-                    int start = index;
-                    int end = index + mKeyword.length();
+            if (mKeywordPattern != null) {
+                // 直接在原文上匹配，下标不会因大小写转换长度变化而错位
+                Matcher keywordMatcher = mKeywordPattern.matcher(content);
+                while (keywordMatcher.find()) {
+                    int start = keywordMatcher.start();
+                    int end = keywordMatcher.end();
                     spannable.setSpan(new BackgroundColorSpan(
                             ContextCompat.getColor(mContext, R.color.logcat_filter_background_color)),
                             start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                     spannable.setSpan(new ForegroundColorSpan(
                             ContextCompat.getColor(mContext, R.color.logcat_filter_foreground_color)),
                             start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                    index = contentLower.indexOf(mKeywordLower, end);
                 }
             } else {
                 // 高亮代码行数
