@@ -7,9 +7,9 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
 
 /**
  *    author : Android 轮子哥
@@ -33,8 +33,15 @@ final class LogcatManager {
     private static final ArrayDeque<LogcatInfo> LOG_BACKUP = new ArrayDeque<>();
     /** 备用集合上限 */
     private static final int LOG_BACKUP_MAX_COUNT = 1000;
-    /** 已读取日志存放集合（用于流重建后去重） */
-    private static final Set<String> LOG_HASH = new HashSet<>();
+    /** 去重窗口上限 */
+    private static final int LOG_HASH_MAX_COUNT = 5000;
+    /** 已读取日志 LRU 缓存（用于流重建后去重，淘汰最旧而非全清，仅 reader 线程访问） */
+    private static final Map<String, Boolean> LOG_HASH = new LinkedHashMap<String, Boolean>(256, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, Boolean> eldest) {
+            return size() > LOG_HASH_MAX_COUNT;
+        }
+    };
 
     public static void setCanObtainUid(boolean canObtainUid) {
         sCanObtainUid = canObtainUid;
@@ -180,18 +187,14 @@ final class LogcatManager {
                         continue;
                     }
 
-                    if (LOG_HASH.contains(line)) {
+                    // put 返回旧值即代表已读取过，同时刷新 recency，超限自动淘汰最旧
+                    if (LOG_HASH.put(line, Boolean.TRUE) != null) {
                         // 之前已经读取过这条日志了，这就不再触发了
                         // 搞这一波操作是为了上面兼容有些手机获取到的最新日志为空而做处理
                         // 这是因为上面的操作是每次获取的最新日志为空就重新创建读取流
                         // 这样会出现重新读取出来的日志有很大一部分是旧的日志，就会导致日志重复
                         // 所以这里需要过滤掉这些重复的日志，直接保存日志原始内容用于比对
                         continue;
-                    }
-                    LOG_HASH.add(line);
-                    // 去重窗口只需覆盖流重建后的重读重叠区，原始行比哈希值占内存大，故上限收紧
-                    if (LOG_HASH.size() > 5000) {
-                        LOG_HASH.clear();
                     }
 
                     LogcatInfo info = LogcatInfo.create(line, sCanObtainUid);
