@@ -23,8 +23,14 @@ final class LogLevel {
     /** 错误日志 */
     static final String ERROR = "E";
 
+    static final String FATAL = "F";
+
+    static int getLevelSeverity(String level) {
+        return FATAL.equals(level) ? 5 : getLevelIndex(level);
+    }
+
     /**
-     * 获取日志等级的严重度序号（V=0 D=1 I=2 W=3 E=4），未知等级返回 -1
+     * 获取日志等级按钮序号，未知等级返回 -1
      */
     static int getLevelIndex(String level) {
         switch (level) {

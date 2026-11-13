@@ -308,7 +308,7 @@ final class LogcatAdapter extends RecyclerView.Adapter<LogcatAdapter.ViewHolder>
             return true;
         }
         if (mLogLevelAndAbove) {
-            return LogLevel.getLevelIndex(info.getLevel()) >= LogLevel.getLevelIndex(mLogLevel);
+            return LogLevel.getLevelSeverity(info.getLevel()) >= LogLevel.getLevelSeverity(mLogLevel);
         }
         return info.getLevel().equals(mLogLevel);
     }
