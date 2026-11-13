@@ -111,8 +111,7 @@ final class LogcatAdapter extends RecyclerView.Adapter<LogcatAdapter.ViewHolder>
      */
     void addItems(List<LogcatInfo> batch) {
         int oldSize = mShowData.size();
-        List<Integer> mergedPositions = new ArrayList<>();
-        int lastMergedPosition = -1;
+        boolean oldTailMerged = false;
 
         for (LogcatInfo info : batch) {
             if (mLogAutoMergePrint && !mShowData.isEmpty()) {
@@ -121,10 +120,9 @@ final class LogcatAdapter extends RecyclerView.Adapter<LogcatAdapter.ViewHolder>
                         info.getTag().equals(lastInfo.getTag())) {
                     // 追加日志
                     lastInfo.addLogContent(info.getContent());
-                    int position = mShowData.size() - 1;
-                    if (position != lastMergedPosition) {
-                        mergedPositions.add(position);
-                        lastMergedPosition = position;
+                    // 只有本批尚未插入新条目时，合并目标才是需要单独通知的老条目
+                    if (mShowData.size() == oldSize) {
+                        oldTailMerged = true;
                     }
                     continue;
                 }
@@ -156,8 +154,9 @@ final class LogcatAdapter extends RecyclerView.Adapter<LogcatAdapter.ViewHolder>
                 mRecyclerView.scrollToPosition(getItemCount() - 1);
             }
         } else {
-            for (int position : mergedPositions) {
-                notifyItemChanged(position);
+            // 先通知老条目变更，再通知新条目插入，符合 RecyclerView 通知顺序契约
+            if (oldTailMerged) {
+                notifyItemChanged(oldSize - 1);
             }
             int insertedCount = mShowData.size() - oldSize;
             if (insertedCount > 0) {
