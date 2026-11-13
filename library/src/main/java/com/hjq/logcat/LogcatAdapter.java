@@ -210,11 +210,34 @@ final class LogcatAdapter extends RecyclerView.Adapter<LogcatAdapter.ViewHolder>
         if (mAllData != mShowData && info != null) {
             mAllData.remove(info);
         }
-        if (info != null && !mAllData.contains(info)) {
+        // 两个列表都已删除该条目，状态可直接清理
+        if (info != null) {
             mExpandSet.delete(info.hashCode());
             mScrollXSet.delete(info.hashCode());
         }
         notifyItemRemoved(position);
+    }
+
+    /**
+     * 从完整列表和显示列表中删除指定 Tag 的日志（屏蔽用）
+     */
+    void removeTag(String tag) {
+        for (int i = mAllData.size() - 1; i >= 0; i--) {
+            LogcatInfo info = mAllData.get(i);
+            if (info.getTag().trim().equals(tag)) {
+                mExpandSet.delete(info.hashCode());
+                mScrollXSet.delete(info.hashCode());
+                mAllData.remove(i);
+            }
+        }
+        if (mShowData != mAllData) {
+            for (int i = mShowData.size() - 1; i >= 0; i--) {
+                if (mShowData.get(i).getTag().trim().equals(tag)) {
+                    mShowData.remove(i);
+                }
+            }
+        }
+        notifyDataSetChanged();
     }
 
     /**

@@ -511,14 +511,8 @@ public final class LogcatActivity extends AppCompatActivity
             File file = LogcatUtils.writeTagFilter(this, newTagFilter);
             LogcatUtils.toast(this, getResources().getString(R.string.logcat_shield_succeed) + file.getPath());
 
-            // 从列表中删除关于这个 Tag 的日志
-            List<LogcatInfo> data = mAdapter.getShowData();
-            for (int i = data.size() - 1; i >= 0; i--) {
-                LogcatInfo info = data.get(i);
-                if (info.getTag().trim().equals(tag)) {
-                    mAdapter.removeItem(i);
-                }
-            }
+            // 从完整列表和显示列表中删除关于这个 Tag 的日志，取消筛选后也不会复活
+            mAdapter.removeTag(tag);
 
         } catch (IOException e) {
             e.printStackTrace();
