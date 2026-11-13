@@ -22,6 +22,7 @@ import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.RecyclerView;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -56,6 +57,7 @@ final class LogcatAdapter extends RecyclerView.Adapter<LogcatAdapter.ViewHolder>
     private final Context mContext;
 
     private String mKeyword = "";
+    private String mKeywordLower = "";
     private String mLogLevel = LogLevel.VERBOSE;
     /** 等级过滤是否包含更高等级的日志 */
     private boolean mLogLevelAndAbove;
@@ -193,6 +195,7 @@ final class LogcatAdapter extends RecyclerView.Adapter<LogcatAdapter.ViewHolder>
 
     void setKeyword(String keyword) {
         mKeyword = keyword;
+        mKeywordLower = keyword.toLowerCase(Locale.ROOT);
         filterData();
         notifyDataSetChanged();
     }
@@ -235,7 +238,7 @@ final class LogcatAdapter extends RecyclerView.Adapter<LogcatAdapter.ViewHolder>
     }
 
     private boolean isConform(LogcatInfo info) {
-        return (TextUtils.isEmpty(mKeyword) || info.toString(mContext).toLowerCase().contains(mKeyword.toLowerCase())) &&
+        return (TextUtils.isEmpty(mKeyword) || info.toString(mContext).toLowerCase(Locale.ROOT).contains(mKeywordLower)) &&
                 isLevelConform(info);
     }
 
@@ -381,10 +384,8 @@ final class LogcatAdapter extends RecyclerView.Adapter<LogcatAdapter.ViewHolder>
             //  at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:1130)
             SpannableString spannable = new SpannableString(content);
             if (mKeyword != null && !mKeyword.isEmpty()) {
-                int index = content.indexOf(mKeyword);
-                if (index == -1) {
-                    index = content.toLowerCase().indexOf(mKeyword.toLowerCase());
-                }
+                String contentLower = content.toLowerCase(Locale.ROOT);
+                int index = contentLower.indexOf(mKeywordLower);
                 while (index > -1) {
                     int start = index;
                     int end = index + mKeyword.length();
@@ -394,10 +395,7 @@ final class LogcatAdapter extends RecyclerView.Adapter<LogcatAdapter.ViewHolder>
                     spannable.setSpan(new ForegroundColorSpan(
                             ContextCompat.getColor(mContext, R.color.logcat_filter_foreground_color)),
                             start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                    index = content.indexOf(mKeyword, end);
-                    if (index == -1) {
-                        index = content.toLowerCase().indexOf(mKeyword.toLowerCase(), end);
-                    }
+                    index = contentLower.indexOf(mKeywordLower, end);
                 }
             } else {
                 // 高亮代码行数
@@ -470,7 +468,13 @@ final class LogcatAdapter extends RecyclerView.Adapter<LogcatAdapter.ViewHolder>
                 maxLine = 4;
             }
 
-            if (content.split("\n").length - maxLine > 1) {
+            int lineCount = 1;
+            for (int i = 0; i < content.length(); i++) {
+                if (content.charAt(i) == '\n') {
+                    lineCount++;
+                }
+            }
+            if (lineCount - maxLine > 1) {
 
                 if (mExpandSet.get(info.hashCode())) {
                     if (mContentView.getMaxLines() != Integer.MAX_VALUE) {
