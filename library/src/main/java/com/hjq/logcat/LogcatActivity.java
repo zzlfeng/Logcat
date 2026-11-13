@@ -292,6 +292,7 @@ public final class LogcatActivity extends AppCompatActivity
             }
         } else if (v == mClearView) {
             LogcatManager.clear();
+            mPendingLogs.clear();
             mAdapter.clearData();
         } else if (v == mHideView) {
             onBackPressed();
@@ -479,6 +480,8 @@ public final class LogcatActivity extends AppCompatActivity
             return;
         }
         mTagFilter.add(tag);
+        // 清掉队列中该 Tag 的积压日志，避免下一轮消费时复活
+        mPendingLogs.removeIf(pending -> pending.getTag().equals(tag));
 
         try {
             List<String> newTagFilter = new ArrayList<>(mTagFilter);
