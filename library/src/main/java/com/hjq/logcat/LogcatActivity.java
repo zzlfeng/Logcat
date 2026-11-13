@@ -57,8 +57,6 @@ public final class LogcatActivity extends AppCompatActivity
 
     /** 日志批量消费间隔（毫秒） */
     private static final int LOG_DRAIN_INTERVAL_MILLIS = 150;
-    /** 单次批量消费上限 */
-    private static final int LOG_DRAIN_BATCH_SIZE = 500;
 
     private View mRootView;
     private View mBarView;
@@ -420,12 +418,13 @@ public final class LogcatActivity extends AppCompatActivity
         @Override
         public void run() {
             List<LogcatInfo> batch = new ArrayList<>();
-            for (int i = 0; i < LOG_DRAIN_BATCH_SIZE; i++) {
-                LogcatInfo info = mPendingLogs.poll();
-                if (info == null) {
-                    break;
-                }
+            LogcatInfo info;
+            while ((info = mPendingLogs.poll()) != null) {
                 batch.add(info);
+            }
+            // 只保留最后上限条：超出部分交给 adapter 也会被裁掉，避免积压落后和做无用功
+            if (batch.size() > LogcatAdapter.LOG_MAX_COUNT) {
+                batch = batch.subList(batch.size() - LogcatAdapter.LOG_MAX_COUNT, batch.size());
             }
             if (!batch.isEmpty()) {
                 mAdapter.addItems(batch);

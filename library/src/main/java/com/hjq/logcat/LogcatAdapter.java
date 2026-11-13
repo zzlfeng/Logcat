@@ -34,7 +34,7 @@ import java.util.regex.Pattern;
 final class LogcatAdapter extends RecyclerView.Adapter<LogcatAdapter.ViewHolder> {
 
     /** 最大日志数量限制（避免日志过多导致出现 OOM） */
-    private static final int LOG_MAX_COUNT = 1000;
+    static final int LOG_MAX_COUNT = 1000;
 
     /** 达到阈值时删除的日志数量 */
     private static final int LOG_REMOVE_COUNT = LOG_MAX_COUNT / 3;
