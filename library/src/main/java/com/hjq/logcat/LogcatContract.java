@@ -26,6 +26,15 @@ final class LogcatContract {
    /** 默认日志等级过滤模式（true 为当前等级及以上，默认仅当前等级） */
    static final String META_DATA_LOGCAT_DEFAULT_LOG_LEVEL_MODE = "LogcatDefaultLogLevelMode";
 
+   /** 悬浮窗默认位置 gravity（组合字符串，如 end|center_vertical） */
+   static final String META_DATA_LOGCAT_FLOATING_WINDOW_GRAVITY = "LogcatFloatingWindowGravity";
+
+   /** 悬浮窗默认 X 偏移（px） */
+   static final String META_DATA_LOGCAT_FLOATING_WINDOW_OFFSET_X = "LogcatFloatingWindowOffsetX";
+
+   /** 悬浮窗默认 Y 偏移（px） */
+   static final String META_DATA_LOGCAT_FLOATING_WINDOW_OFFSET_Y = "LogcatFloatingWindowOffsetY";
+
    /** SP 文件名 */
    static final String SP_FILE_NAME = "logcat";
 
@@ -34,6 +43,9 @@ final class LogcatContract {
 
    /** SP Key：日志等级过滤模式 */
    static final String SP_KEY_LOGCAT_LOG_LEVEL_MODE = "logcat_log_level_mode";
+
+   /** SP Key：悬浮窗位置记忆 */
+   static final String SP_KEY_LOGCAT_FLOATING_WINDOW_LOCATION = "logcat_floating_window_location";
 
    /** SP Key：搜索关键字 */
    static final String SP_KEY_LOGCAT_SEARCH_KEY = "logcat_search_key";

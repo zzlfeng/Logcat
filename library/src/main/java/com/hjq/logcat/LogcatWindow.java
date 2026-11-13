@@ -1,17 +1,20 @@
 package com.hjq.logcat;
 
+import android.animation.Animator;
 import android.app.Activity;
 import android.app.Application;
 import android.content.Context;
 import android.content.Intent;
+import android.util.DisplayMetrics;
 import android.util.TypedValue;
-import android.view.Gravity;
 import android.view.View;
+import android.view.WindowManager;
 import android.widget.ImageView;
 import androidx.annotation.NonNull;
 import com.hjq.window.EasyWindow;
 import com.hjq.window.OnWindowViewClickListener;
 import com.hjq.window.draggable.SpringBackWindowDraggableRule;
+import com.hjq.window.draggable.callback.OnSpringBackAnimCallback;
 
 /**
  *    author : Android 轮子哥
@@ -41,13 +44,31 @@ final class LogcatWindow extends EasyWindow<LogcatWindow> implements OnWindowVie
         setWindowSize(size, size);
 
         setWindowAnim(android.R.style.Animation_Toast);
-        setWindowDraggableRule(new SpringBackWindowDraggableRule());
-        setWindowLocation(Gravity.END | Gravity.CENTER_VERTICAL, 0, 0);
+        SpringBackWindowDraggableRule draggableRule = new SpringBackWindowDraggableRule();
+        // 吸边动画结束后才是最终位置，此时记忆
+        draggableRule.setOnSpringBackAnimCallback(new OnSpringBackAnimCallback() {
+            @Override
+            public void onSpringBackAnimationEnd(@NonNull EasyWindow<?> easyWindow, @NonNull Animator animator) {
+                saveWindowLocation();
+            }
+        });
+        setWindowDraggableRule(draggableRule);
+        DisplayMetrics metrics = context.getResources().getDisplayMetrics();
+        int[] location = LogcatConfig.getFloatingWindowLocationConfig(metrics.widthPixels, metrics.heightPixels);
+        setWindowLocation(location[0], location[1], location[2]);
         setOnClickListenerByView(android.R.id.icon, this);
+    }
+
+    private void saveWindowLocation() {
+        WindowManager.LayoutParams params = getWindowParams();
+        DisplayMetrics metrics = getContext().getResources().getDisplayMetrics();
+        LogcatConfig.setFloatingWindowLocationConfig(params.gravity, params.x, params.y,
+                metrics.widthPixels, metrics.heightPixels);
     }
 
     @Override
     public void onClick(@NonNull EasyWindow<?> easyWindow, @NonNull View view) {
+        saveWindowLocation();
         Context context = getContext();
         Intent intent = new Intent(context, LogcatActivity.class);
         if (!(context instanceof Activity)) {
