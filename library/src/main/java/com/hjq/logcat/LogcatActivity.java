@@ -82,6 +82,7 @@ public final class LogcatActivity extends AppCompatActivity
     private final Handler mMainHandler = new Handler(Looper.getMainLooper());
     /** 是否有待执行的日志消费任务（0 无 1 有），用于入队踢一脚且保证单消费链 */
     private final AtomicInteger mDrainScheduled = new AtomicInteger();
+    private volatile boolean mLogDrainEnabled;
 
     private String mLogLevel = LogLevel.VERBOSE;
 
@@ -220,7 +221,7 @@ public final class LogcatActivity extends AppCompatActivity
 
         // 只入队，由主线程批量消费；延迟一个间隔再处理以攒批，避免逐条刷新列表
         mPendingLogs.offer(info);
-        if (mDrainScheduled.compareAndSet(0, 1)) {
+        if (mLogDrainEnabled && mDrainScheduled.compareAndSet(0, 1)) {
             mMainHandler.postDelayed(mDrainRunnable, LOG_DRAIN_INTERVAL_MILLIS);
         }
     }
@@ -430,7 +431,8 @@ public final class LogcatActivity extends AppCompatActivity
         public void run() {
             // 先清标记再取队列：期间入队的日志会自行安排下一轮，不会漏
             mDrainScheduled.set(0);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && isDestroyed()) {
+            if (!mLogDrainEnabled
+                    || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && isDestroyed())) {
                 return;
             }
             List<LogcatInfo> batch = new ArrayList<>();
@@ -449,12 +451,14 @@ public final class LogcatActivity extends AppCompatActivity
     };
 
     private void startLogDrain() {
+        mLogDrainEnabled = true;
         mDrainScheduled.set(1);
         mMainHandler.removeCallbacks(mDrainRunnable);
         mMainHandler.post(mDrainRunnable);
     }
 
     private void stopLogDrain() {
+        mLogDrainEnabled = false;
         mMainHandler.removeCallbacks(mDrainRunnable);
         mDrainScheduled.set(0);
     }
