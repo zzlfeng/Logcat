@@ -8,6 +8,7 @@ import java.io.InputStreamReader;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  *    author : Android 轮子哥
@@ -25,43 +26,49 @@ final class LogcatManager {
     private static volatile boolean sCanObtainUid;
     /** 日志捕捉标记 */
     private static volatile boolean FLAG_WORK;
-    /** 日志进程对象 */
-    private static volatile java.lang.Process sProcess;
+    private static volatile LogRunnable sLogRunnable;
     /** 备用存放集合（暂停期间缓存，超限丢弃最旧） */
     private static final ArrayDeque<LogcatInfo> LOG_BACKUP = new ArrayDeque<>();
     /** 备用集合上限 */
     private static final int LOG_BACKUP_MAX_COUNT = 1000;
     private static final long LOG_REPLAY_TIMEOUT_MILLIS = 5000;
     private static String sLogTimeWatermark;
-    /** 最后投递的日志行，重读阶段以此定位重读结束（仅 reader 线程访问） */
     private static String sLastDeliveredLine;
-    /** 是否处于重建流/重开后的重读阶段；正常读日志不过滤 */
-    private static boolean sReplaying;
 
     public static void setCanObtainUid(boolean canObtainUid) {
         sCanObtainUid = canObtainUid;
     }
 
     public static void setCallback(Callback callback) {
-        sCallback = callback;
+        synchronized (LOG_BACKUP) {
+            sCallback = callback;
+        }
     }
 
     /**
      * 开始捕捉
      */
     static void start() {
-        FLAG_WORK = true;
-        // 重开页面时首条流也会从头倒缓冲区，视为重读阶段避免重复显示
-        sReplaying = sLastDeliveredLine != null;
-        new Thread(new LogRunnable()).start();
+        LogRunnable previous;
+        LogRunnable current;
+        synchronized (LOG_BACKUP) {
+            previous = sLogRunnable;
+            current = new LogRunnable(sLastDeliveredLine, sLogTimeWatermark);
+            sLogRunnable = current;
+            FLAG_WORK = true;
+        }
+        if (previous != null) {
+            previous.destroyProcess();
+        }
+        new Thread(current).start();
     }
 
     /**
      * 继续捕捉
      */
     static void resume() {
-        final Callback callback = sCallback;
         synchronized (LOG_BACKUP) {
+            final Callback callback = sCallback;
             // 锁内排空并投递，保证备份日志先于新日志；回调仅过滤+入队，锁内投递廉价无阻塞
             while (!LOG_BACKUP.isEmpty()) {
                 List<LogcatInfo> backup = new ArrayList<>(LOG_BACKUP);
@@ -80,22 +87,24 @@ final class LogcatManager {
      * 暂停捕捉
      */
     static void pause() {
-        FLAG_WORK = false;
+        synchronized (LOG_BACKUP) {
+            FLAG_WORK = false;
+        }
     }
 
     /**
      * 停止捕捉
      */
     static void destroy() {
-        FLAG_WORK = false;
-        // 把监听对象置空，不然会导致内存泄漏
-        sCallback = null;
-        java.lang.Process process = sProcess;
-        sProcess = null;
-        if (process != null) {
-            try {
-                process.destroy();
-            } catch (Exception ignored) {}
+        LogRunnable current;
+        synchronized (LOG_BACKUP) {
+            FLAG_WORK = false;
+            sCallback = null;
+            current = sLogRunnable;
+            sLogRunnable = null;
+        }
+        if (current != null) {
+            current.destroyProcess();
         }
     }
 
@@ -111,7 +120,7 @@ final class LogcatManager {
     /**
      * 创建 Logcat 日志缓冲区
      */
-    private static BufferedReader createLogcatBufferedReader() throws IOException {
+    private static BufferedReader createLogcatBufferedReader(LogRunnable owner) throws IOException {
         // Process process = Runtime.getRuntime().exec("/system/bin/logcat -b " + "main -P '\"/" + android.os.Process.myPid() + " 10708\"'");
         // Process process = Runtime.getRuntime().exec("/system/bin/logcat -b all -v uid");
         // Process process = Runtime.getRuntime().exec("logcat -b all -v uid");
@@ -121,8 +130,9 @@ final class LogcatManager {
         // 还有在手机上面执行 logcat -v uid 获取日志，在 Android 10 及以下机子 uid 会为空格（一般为四个空格，还不算前后两个空格）
         // 多种日志格式拼接：logcat -v format, --format='threadtime uid usec color' -d
         String command = "logcat -v " + (sCanObtainUid ? "uid" : "threadtime");
-        sProcess = Runtime.getRuntime().exec(command);
-        return new BufferedReader(new InputStreamReader(sProcess.getInputStream()));
+        java.lang.Process process = Runtime.getRuntime().exec(command);
+        owner.mProcess.set(process);
+        return new BufferedReader(new InputStreamReader(process.getInputStream()));
     }
 
     /**
@@ -141,26 +151,56 @@ final class LogcatManager {
 
     private static class LogRunnable implements Runnable {
 
+        private final AtomicReference<java.lang.Process> mProcess = new AtomicReference<>();
+        private String mLastDeliveredLine;
+        private String mLogTimeWatermark;
+        private boolean mReplaying;
+
+        LogRunnable(String lastDeliveredLine, String logTimeWatermark) {
+            mLastDeliveredLine = lastDeliveredLine;
+            mLogTimeWatermark = logTimeWatermark;
+            mReplaying = lastDeliveredLine != null;
+        }
+
+        private boolean isCurrent() {
+            return sLogRunnable == this;
+        }
+
+        private void destroyProcess() {
+            java.lang.Process process = mProcess.getAndSet(null);
+            if (process != null) {
+                try {
+                    process.destroy();
+                } catch (Exception ignored) {}
+            }
+        }
+
         @Override
         public void run() {
             BufferedReader reader = null;
             long replayStartTime = 0;
             try {
                 String line;
-                while (true) {
+                while (isCurrent()) {
                     if (reader == null) {
                         try {
-                            reader = createLogcatBufferedReader();
+                            reader = createLogcatBufferedReader(this);
                             replayStartTime = SystemClock.elapsedRealtime();
                         } catch (IOException e) {
                             e.printStackTrace();
                             break;
                         }
                     }
+                    if (!isCurrent()) {
+                        break;
+                    }
                     try {
                         line = reader.readLine();
                     } catch (IOException e) {
                         e.printStackTrace();
+                        break;
+                    }
+                    if (!isCurrent()) {
                         break;
                     }
                     if (line == null) {
@@ -171,19 +211,14 @@ final class LogcatManager {
                         // 同样的 Android 12 手机，我用小米 12 就没有出现这种情况，所以大家要怪只能怪厂商了
                         closeStream(reader);
                         reader = null;
-                        if (sProcess != null) {
-                            try {
-                                sProcess.destroy();
-                            } catch (Exception ignored) {}
-                            sProcess = null;
-                        }
-                        boolean wasReplaying = sReplaying;
-                        sReplaying = sLastDeliveredLine != null;
+                        destroyProcess();
+                        boolean wasReplaying = mReplaying;
+                        mReplaying = mLastDeliveredLine != null;
                         SystemClock.sleep(5000);
                         // 连续 EOF 重建不能每轮重置超时，导致重读永远无法结束
                         if (wasReplaying
                                 && SystemClock.elapsedRealtime() - replayStartTime >= LOG_REPLAY_TIMEOUT_MILLIS) {
-                            sReplaying = false;
+                            mReplaying = false;
                         }
                         continue;
                     }
@@ -198,26 +233,30 @@ final class LogcatManager {
                     }
 
                     // 仅重读阶段过滤：正常读日志不过滤，避免乱序时间戳和时钟回拨静默丢日志
-                    if (sReplaying) {
-                        if (line.equals(sLastDeliveredLine)) {
+                    if (mReplaying) {
+                        if (line.equals(mLastDeliveredLine)) {
                             // 追上次最后一行，重读结束；该行本身已显示过
-                            sReplaying = false;
+                            mReplaying = false;
                             continue;
                         }
                         // 标记缺失且时间回退时，也必须有有限的重读退出边界
-                        if (info.getTime().compareTo(sLogTimeWatermark) > 0
+                        if (info.getTime().compareTo(mLogTimeWatermark) > 0
                                 || SystemClock.elapsedRealtime() - replayStartTime >= LOG_REPLAY_TIMEOUT_MILLIS) {
-                            sReplaying = false;
+                            mReplaying = false;
                         } else {
                             continue;
                         }
                     }
 
-                    sLastDeliveredLine = line;
+                    mLastDeliveredLine = line;
                     // 水位跟随最后一行，不能保留跨年或回拨前的最大时间
-                    sLogTimeWatermark = info.getTime();
-                    // 检查与入备在同一把锁内，与 resume 的排空+置位互斥，避免丢日志或插队
+                    mLogTimeWatermark = info.getTime();
                     synchronized (LOG_BACKUP) {
+                        if (!isCurrent()) {
+                            break;
+                        }
+                        sLastDeliveredLine = mLastDeliveredLine;
+                        sLogTimeWatermark = mLogTimeWatermark;
                         if (!FLAG_WORK) {
                             LOG_BACKUP.addLast(info);
                             if (LOG_BACKUP.size() > LOG_BACKUP_MAX_COUNT) {
@@ -225,22 +264,17 @@ final class LogcatManager {
                             }
                             continue;
                         }
+                        final Callback callback = sCallback;
+                        if (callback == null) {
+                            break;
+                        }
+                        // 与销毁及切换会话互斥，不能在失去归属后向新页面投递
+                        callback.onReceiveLog(info);
                     }
-
-                    final Callback callback = sCallback;
-                    if (callback == null) {
-                        break;
-                    }
-                    callback.onReceiveLog(info);
                 }
             } finally {
                 closeStream(reader);
-                if (sProcess != null) {
-                    try {
-                        sProcess.destroy();
-                    } catch (Exception ignored) {}
-                    sProcess = null;
-                }
+                destroyProcess();
             }
         }
     }
