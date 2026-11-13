@@ -30,7 +30,7 @@ final class LogcatManager {
     private static volatile java.lang.Process sProcess;
     /** 备用存放集合 */
     private static final List<LogcatInfo> LOG_BACKUP = new CopyOnWriteArrayList<>();
-    /** Log 哈希存放集合 */
+    /** 已读取日志存放集合（用于流重建后去重） */
     private static final Set<String> LOG_HASH = new HashSet<>();
 
     public static void setCanObtainUid(boolean canObtainUid) {
@@ -173,17 +173,17 @@ final class LogcatManager {
                         continue;
                     }
 
-                    String md5 = LogcatUtils.computeMD5Hash(line);
-                    if (LOG_HASH.contains(md5)) {
+                    if (LOG_HASH.contains(line)) {
                         // 之前已经读取过这条日志了，这就不再触发了
                         // 搞这一波操作是为了上面兼容有些手机获取到的最新日志为空而做处理
                         // 这是因为上面的操作是每次获取的最新日志为空就重新创建读取流
                         // 这样会出现重新读取出来的日志有很大一部分是旧的日志，就会导致日志重复
-                        // 所以这里需要过滤掉这些重复的日志，对日志内容进行哈希计算并进行保存
+                        // 所以这里需要过滤掉这些重复的日志，直接保存日志原始内容用于比对
                         continue;
                     }
-                    LOG_HASH.add(md5);
-                    if (LOG_HASH.size() > 20000) {
+                    LOG_HASH.add(line);
+                    // 去重窗口只需覆盖流重建后的重读重叠区，原始行比哈希值占内存大，故上限收紧
+                    if (LOG_HASH.size() > 5000) {
                         LOG_HASH.clear();
                     }
 

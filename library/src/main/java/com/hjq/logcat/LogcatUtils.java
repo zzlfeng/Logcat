@@ -25,8 +25,6 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -228,28 +226,5 @@ final class LogcatUtils {
         }
 
         return file;
-    }
-
-    /**
-     * 计算字符串 md5 哈希值
-     */
-    public static String computeMD5Hash(String string) {
-        byte[] hash;
-
-        try {
-            hash = MessageDigest.getInstance("MD5").digest(string.getBytes(CHARSET_UTF_8));
-        } catch (NoSuchAlgorithmException e) {
-            e.printStackTrace();
-            return null;
-        }
-
-        StringBuilder hex = new StringBuilder(hash.length * 2);
-        for (byte b : hash) {
-            if ((b & 0xFF) < 0x10)
-                hex.append("0");
-            hex.append(Integer.toHexString(b & 0xFF));
-        }
-
-        return hex.toString();
     }
 }
