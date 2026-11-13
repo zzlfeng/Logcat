@@ -31,7 +31,7 @@ final class LogcatManager {
     private static final ArrayDeque<LogcatInfo> LOG_BACKUP = new ArrayDeque<>();
     /** 备用集合上限 */
     private static final int LOG_BACKUP_MAX_COUNT = 1000;
-    /** 已投递日志的时间水位（MM-DD hh:mm:ss.mmm），仅重读阶段兜底用 */
+    private static final long LOG_REPLAY_TIMEOUT_MILLIS = 5000;
     private static String sLogTimeWatermark;
     /** 最后投递的日志行，重读阶段以此定位重读结束（仅 reader 线程访问） */
     private static String sLastDeliveredLine;
@@ -144,12 +144,14 @@ final class LogcatManager {
         @Override
         public void run() {
             BufferedReader reader = null;
+            long replayStartTime = 0;
             try {
                 String line;
                 while (true) {
                     if (reader == null) {
                         try {
                             reader = createLogcatBufferedReader();
+                            replayStartTime = SystemClock.elapsedRealtime();
                         } catch (IOException e) {
                             e.printStackTrace();
                             break;
@@ -175,8 +177,14 @@ final class LogcatManager {
                             } catch (Exception ignored) {}
                             sProcess = null;
                         }
+                        boolean wasReplaying = sReplaying;
                         sReplaying = sLastDeliveredLine != null;
                         SystemClock.sleep(5000);
+                        // 连续 EOF 重建不能每轮重置超时，导致重读永远无法结束
+                        if (wasReplaying
+                                && SystemClock.elapsedRealtime() - replayStartTime >= LOG_REPLAY_TIMEOUT_MILLIS) {
+                            sReplaying = false;
+                        }
                         continue;
                     }
 
@@ -196,8 +204,9 @@ final class LogcatManager {
                             sReplaying = false;
                             continue;
                         }
-                        if (info.getTime().compareTo(sLogTimeWatermark) > 0) {
-                            // 标记行已被缓冲区挤掉，按时间兜底结束重读
+                        // 标记缺失且时间回退时，也必须有有限的重读退出边界
+                        if (info.getTime().compareTo(sLogTimeWatermark) > 0
+                                || SystemClock.elapsedRealtime() - replayStartTime >= LOG_REPLAY_TIMEOUT_MILLIS) {
                             sReplaying = false;
                         } else {
                             continue;
@@ -205,9 +214,8 @@ final class LogcatManager {
                     }
 
                     sLastDeliveredLine = line;
-                    if (sLogTimeWatermark == null || info.getTime().compareTo(sLogTimeWatermark) > 0) {
-                        sLogTimeWatermark = info.getTime();
-                    }
+                    // 水位跟随最后一行，不能保留跨年或回拨前的最大时间
+                    sLogTimeWatermark = info.getTime();
                     // 检查与入备在同一把锁内，与 resume 的排空+置位互斥，避免丢日志或插队
                     synchronized (LOG_BACKUP) {
                         if (!FLAG_WORK) {
