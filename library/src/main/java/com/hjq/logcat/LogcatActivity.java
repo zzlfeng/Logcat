@@ -226,13 +226,25 @@ public final class LogcatActivity extends AppCompatActivity
     @Override
     public void onClick(View v) {
         if (v == mSaveView) {
-            try {
-                File file = LogcatUtils.saveLogToFile(this, mAdapter.getShowData());
-                LogcatUtils.toast(this, getResources().getString(R.string.logcat_save_succeed) + file.getPath());
-            } catch (IOException e) {
-                e.printStackTrace();
-                LogcatUtils.toast(this, getResources().getString(R.string.logcat_save_fail));
-            }
+            // 主线程先快照，避免后台线程迭代活列表引发并发修改
+            final List<LogcatInfo> data = new ArrayList<>(mAdapter.getShowData());
+            new Thread(() -> {
+                String message;
+                try {
+                    File file = LogcatUtils.saveLogToFile(this, data);
+                    message = getResources().getString(R.string.logcat_save_succeed) + file.getPath();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                    message = getResources().getString(R.string.logcat_save_fail);
+                }
+                final String toastMessage = message;
+                runOnUiThread(() -> {
+                    if (isFinishing() || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && isDestroyed())) {
+                        return;
+                    }
+                    LogcatUtils.toast(this, toastMessage);
+                });
+            }).start();
         } else if (v == mLevelLayout) {
             new ChooseWindow(this)
                     .setList(ARRAY_LOG_LEVEL)
