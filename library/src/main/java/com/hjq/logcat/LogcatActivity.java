@@ -464,7 +464,11 @@ public final class LogcatActivity extends AppCompatActivity
      */
     private void initLogFilter() {
         try {
-            mTagFilter.addAll(LogcatUtils.readTagFilter(this));
+            for (String tag : LogcatUtils.readTagFilter(this)) {
+                if (tag != null && !tag.trim().isEmpty()) {
+                    mTagFilter.add(tag.trim());
+                }
+            }
         } catch (IOException e) {
             e.printStackTrace();
             LogcatUtils.toast(this, R.string.logcat_read_config_fail);
@@ -472,13 +476,10 @@ public final class LogcatActivity extends AppCompatActivity
 
         String[] list = getResources().getStringArray(R.array.logcat_filter_list);
         for (String tag : list) {
-            if (tag == null || tag.isEmpty()) {
+            if (tag == null || tag.trim().isEmpty()) {
                 continue;
             }
-            if (mTagFilter.contains(tag)) {
-                continue;
-            }
-            mTagFilter.add(tag);
+            mTagFilter.add(tag.trim());
         }
     }
 
@@ -486,7 +487,9 @@ public final class LogcatActivity extends AppCompatActivity
      * 添加过滤的 TAG
      */
     private void addFilter(String tag) {
-        if ("".equals(tag)) {
+        // Tag 末尾常带空格，统一 trim 后存储，与 onReceiveLog 的比较口径一致
+        tag = tag.trim();
+        if (tag.isEmpty()) {
             return;
         }
         if (mTagFilter.contains(tag)) {
@@ -496,7 +499,7 @@ public final class LogcatActivity extends AppCompatActivity
         // 清掉队列中该 Tag 的积压日志，避免下一轮消费时复活
         // 不用 removeIf：Collection.removeIf 需要 API 24，minSdk 16 会 NoSuchMethodError
         for (Iterator<LogcatInfo> it = mPendingLogs.iterator(); it.hasNext(); ) {
-            if (it.next().getTag().equals(tag)) {
+            if (it.next().getTag().trim().equals(tag)) {
                 it.remove();
             }
         }
@@ -512,7 +515,7 @@ public final class LogcatActivity extends AppCompatActivity
             List<LogcatInfo> data = mAdapter.getShowData();
             for (int i = data.size() - 1; i >= 0; i--) {
                 LogcatInfo info = data.get(i);
-                if (info.getTag().equals(tag)) {
+                if (info.getTag().trim().equals(tag)) {
                     mAdapter.removeItem(i);
                 }
             }

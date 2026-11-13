@@ -210,6 +210,10 @@ final class LogcatAdapter extends RecyclerView.Adapter<LogcatAdapter.ViewHolder>
         if (mAllData != mShowData && info != null) {
             mAllData.remove(info);
         }
+        if (info != null && !mAllData.contains(info)) {
+            mExpandSet.delete(info.hashCode());
+            mScrollXSet.delete(info.hashCode());
+        }
         notifyItemRemoved(position);
     }
 
