@@ -20,7 +20,9 @@ import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.RecyclerView;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -138,12 +140,24 @@ final class LogcatAdapter extends RecyclerView.Adapter<LogcatAdapter.ViewHolder>
         }
 
         boolean trimmed = false;
+        List<LogcatInfo> removedItems = new ArrayList<>();
         if (mShowData.size() > LOG_MAX_COUNT) {
-            trimData(mShowData);
+            trimData(mShowData, removedItems);
             trimmed = true;
         }
         if (mShowData != mAllData) {
-            trimData(mAllData);
+            trimData(mAllData, removedItems);
+        }
+        if (!removedItems.isEmpty()) {
+            // 仅当两个列表都不再持有时才清理状态，避免误清仍在显示条目的展开状态
+            Set<LogcatInfo> retained = new HashSet<>(mAllData);
+            retained.addAll(mShowData);
+            for (LogcatInfo removedInfo : removedItems) {
+                if (!retained.contains(removedInfo)) {
+                    mExpandSet.delete(removedInfo.hashCode());
+                    mScrollXSet.delete(removedInfo.hashCode());
+                }
+            }
         }
 
         if (trimmed) {
@@ -166,15 +180,12 @@ final class LogcatAdapter extends RecyclerView.Adapter<LogcatAdapter.ViewHolder>
     }
 
     /**
-     * 裁剪最旧的日志，并清理对应的展开/滚动状态
+     * 裁剪最旧的日志，被裁条目收集到 removedOut 供调用方统一清理状态
      */
-    private void trimData(List<LogcatInfo> data) {
+    private void trimData(List<LogcatInfo> data, List<LogcatInfo> removedOut) {
         while (data.size() > LOG_MAX_COUNT) {
             List<LogcatInfo> removed = data.subList(0, LOG_REMOVE_COUNT);
-            for (LogcatInfo removedInfo : removed) {
-                mExpandSet.delete(removedInfo.hashCode());
-                mScrollXSet.delete(removedInfo.hashCode());
-            }
+            removedOut.addAll(removed);
             removed.clear();
         }
     }
