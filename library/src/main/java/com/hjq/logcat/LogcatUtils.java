@@ -161,7 +161,7 @@ final class LogcatUtils {
         if (!directory.exists()) {
             directory.mkdirs();
         }
-        File file = new File(directory, new SimpleDateFormat("yyyyMMdd_kkmmss", Locale.getDefault()).format(new Date()) + ".txt");
+        File file = new File(directory, new SimpleDateFormat("yyyyMMdd_kkmmssSSS", Locale.getDefault()).format(new Date()) + ".txt");
         if (!file.isFile()) {
             file.delete();
         }
