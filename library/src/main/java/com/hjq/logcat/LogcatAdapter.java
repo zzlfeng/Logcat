@@ -132,9 +132,9 @@ final class LogcatAdapter extends RecyclerView.Adapter<LogcatAdapter.ViewHolder>
             // 如果当前显示的日志数量超过限定的最大数量
             if (mShowData.size() > LOG_MAX_COUNT) {
                 List<LogcatInfo> removed = mShowData.subList(0, LOG_REMOVE_COUNT);
-                for (LogcatInfo info : removed) {
-                    mExpandSet.delete(info.hashCode());
-                    mScrollXSet.delete(info.hashCode());
+                for (LogcatInfo removedInfo : removed) {
+                    mExpandSet.delete(removedInfo.hashCode());
+                    mScrollXSet.delete(removedInfo.hashCode());
                 }
                 mShowData.removeAll(removed);
                 // 更新所有条目，这样日志的条目索引文案才能更新
