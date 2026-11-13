@@ -33,6 +33,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Queue;
 import java.util.Set;
@@ -493,7 +494,12 @@ public final class LogcatActivity extends AppCompatActivity
         }
         mTagFilter.add(tag);
         // 清掉队列中该 Tag 的积压日志，避免下一轮消费时复活
-        mPendingLogs.removeIf(pending -> pending.getTag().equals(tag));
+        // 不用 removeIf：Collection.removeIf 需要 API 24，minSdk 16 会 NoSuchMethodError
+        for (Iterator<LogcatInfo> it = mPendingLogs.iterator(); it.hasNext(); ) {
+            if (it.next().getTag().equals(tag)) {
+                it.remove();
+            }
+        }
 
         try {
             List<String> newTagFilter = new ArrayList<>(mTagFilter);
