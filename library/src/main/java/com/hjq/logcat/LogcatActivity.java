@@ -32,10 +32,11 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashSet;
+import java.util.Collections;
 import java.util.List;
 import java.util.Queue;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
@@ -86,8 +87,8 @@ public final class LogcatActivity extends AppCompatActivity
     /** 暂停输出日志标记 */
     private boolean mPauseLogFlag;
 
-    /** Tag 过滤规则 */
-    private final Set<String> mTagFilter = new HashSet<>();
+    /** Tag 过滤规则（reader 线程读、主线程写，需并发安全） */
+    private final Set<String> mTagFilter = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
     /** 搜索关键字 */
     private final List<String> mSearchKeyword = new ArrayList<>();
@@ -146,10 +147,12 @@ public final class LogcatActivity extends AppCompatActivity
 
         LogcatManager.setCallback(this);
 
+        // 先初始化过滤器再开始捕获，避免 reader 线程读到未初始化的过滤集合
+        initLogFilter();
+
         // 开始捕获
         LogcatManager.start();
 
-        initLogFilter();
         initSearchCondition();
         refreshLayout();
 
