@@ -5,10 +5,11 @@ import java.io.BufferedReader;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  *    author : Android 轮子哥
@@ -28,8 +29,10 @@ final class LogcatManager {
     private static volatile boolean FLAG_WORK;
     /** 日志进程对象 */
     private static volatile java.lang.Process sProcess;
-    /** 备用存放集合 */
-    private static final List<LogcatInfo> LOG_BACKUP = new CopyOnWriteArrayList<>();
+    /** 备用存放集合（暂停期间缓存，超限丢弃最旧） */
+    private static final ArrayDeque<LogcatInfo> LOG_BACKUP = new ArrayDeque<>();
+    /** 备用集合上限 */
+    private static final int LOG_BACKUP_MAX_COUNT = 1000;
     /** 已读取日志存放集合（用于流重建后去重） */
     private static final Set<String> LOG_HASH = new HashSet<>();
 
@@ -55,15 +58,19 @@ final class LogcatManager {
     static void resume() {
         FLAG_WORK = true;
         final Callback callback = sCallback;
-        if (callback != null && !LOG_BACKUP.isEmpty()) {
-            for (LogcatInfo info : LOG_BACKUP) {
-                if (info == null) {
-                    continue;
-                }
+        List<LogcatInfo> backup;
+        synchronized (LOG_BACKUP) {
+            if (LOG_BACKUP.isEmpty()) {
+                return;
+            }
+            backup = new ArrayList<>(LOG_BACKUP);
+            LOG_BACKUP.clear();
+        }
+        if (callback != null) {
+            for (LogcatInfo info : backup) {
                 callback.onReceiveLog(info);
             }
         }
-        LOG_BACKUP.clear();
     }
 
     /**
@@ -192,8 +199,12 @@ final class LogcatManager {
                         continue;
                     }
                     if (!FLAG_WORK) {
-                        // 这里可能会出现下标异常
-                        LOG_BACKUP.add(info);
+                        synchronized (LOG_BACKUP) {
+                            LOG_BACKUP.addLast(info);
+                            if (LOG_BACKUP.size() > LOG_BACKUP_MAX_COUNT) {
+                                LOG_BACKUP.removeFirst();
+                            }
+                        }
                         continue;
                     }
 

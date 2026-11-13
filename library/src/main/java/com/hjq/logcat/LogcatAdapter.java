@@ -3,7 +3,6 @@ package com.hjq.logcat;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.os.Build;
-import android.os.Looper;
 import android.text.SpannableString;
 import android.text.Spanned;
 import android.text.TextUtils;
@@ -23,7 +22,6 @@ import androidx.recyclerview.widget.RecyclerView;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -51,7 +49,7 @@ final class LogcatAdapter extends RecyclerView.Adapter<LogcatAdapter.ViewHolder>
     private final SparseBooleanArray mExpandSet = new SparseBooleanArray();
     private final SparseIntArray mScrollXSet = new SparseIntArray();
 
-    private final List<LogcatInfo> mAllData = new CopyOnWriteArrayList<>();
+    private final List<LogcatInfo> mAllData = new ArrayList<>();
     private List<LogcatInfo> mShowData = mAllData;
 
     private final Context mContext;
@@ -110,55 +108,76 @@ final class LogcatAdapter extends RecyclerView.Adapter<LogcatAdapter.ViewHolder>
     }
 
     /**
-     * 添加单条数据（这个方法有可能会在子线程调用）
+     * 批量添加数据（仅主线程调用）
      */
-    void addItem(LogcatInfo info) {
-        if (mLogAutoMergePrint && !mShowData.isEmpty()) {
-            LogcatInfo lastInfo = getItem(mShowData.size() - 1);
-            if (info.getLevel().equals(lastInfo.getLevel()) &&
-                    info.getTag().equals(lastInfo.getTag())) {
-                // 追加日志
-                lastInfo.addLogContent(info.getContent());
-                if (Looper.myLooper() == Looper.getMainLooper()) {
-                    notifyItemChanged(mShowData.size() - 1);
+    void addItems(List<LogcatInfo> batch) {
+        int oldSize = mShowData.size();
+        List<Integer> mergedPositions = new ArrayList<>();
+        int lastMergedPosition = -1;
+
+        for (LogcatInfo info : batch) {
+            if (mLogAutoMergePrint && !mShowData.isEmpty()) {
+                LogcatInfo lastInfo = getItem(mShowData.size() - 1);
+                if (info.getLevel().equals(lastInfo.getLevel()) &&
+                        info.getTag().equals(lastInfo.getTag())) {
+                    // 追加日志
+                    lastInfo.addLogContent(info.getContent());
+                    int position = mShowData.size() - 1;
+                    if (position != lastMergedPosition) {
+                        mergedPositions.add(position);
+                        lastMergedPosition = position;
+                    }
+                    continue;
                 }
-                return;
+            }
+
+            if (isConform(info)) {
+                mShowData.add(info);
+            }
+
+            if (mShowData != mAllData) {
+                mAllData.add(info);
             }
         }
 
-        if (isConform(info)) {
-            mShowData.add(info);
-
-            // 如果当前显示的日志数量超过限定的最大数量
-            if (mShowData.size() > LOG_MAX_COUNT) {
-                List<LogcatInfo> removed = mShowData.subList(0, LOG_REMOVE_COUNT);
-                for (LogcatInfo removedInfo : removed) {
-                    mExpandSet.delete(removedInfo.hashCode());
-                    mScrollXSet.delete(removedInfo.hashCode());
-                }
-                mShowData.removeAll(removed);
-                // 更新所有条目，这样日志的条目索引文案才能更新
-                if (Looper.myLooper() == Looper.getMainLooper()) {
-                    notifyDataSetChanged();
-                }
-                if (mRecyclerView != null) {
-                    // 列表滚动到最后一条位置上面
-                    mRecyclerView.scrollToPosition(getItemCount() - 1);
-                }
-            } else {
-                if (Looper.myLooper() == Looper.getMainLooper()) {
-                    notifyItemInserted(mShowData.size() - 1);
-                }
-            }
+        boolean trimmed = false;
+        if (mShowData.size() > LOG_MAX_COUNT) {
+            trimData(mShowData);
+            trimmed = true;
         }
-
         if (mShowData != mAllData) {
-            mAllData.add(info);
+            trimData(mAllData);
+        }
 
-            // 如果所有的日志数量超过限定的最大数量
-            if (mAllData.size() > LOG_MAX_COUNT) {
-                mAllData.removeAll(mAllData.subList(0, LOG_REMOVE_COUNT));
+        if (trimmed) {
+            // 更新所有条目，这样日志的条目索引文案才能更新
+            notifyDataSetChanged();
+            if (mRecyclerView != null) {
+                // 列表滚动到最后一条位置上面
+                mRecyclerView.scrollToPosition(getItemCount() - 1);
             }
+        } else {
+            for (int position : mergedPositions) {
+                notifyItemChanged(position);
+            }
+            int insertedCount = mShowData.size() - oldSize;
+            if (insertedCount > 0) {
+                notifyItemRangeInserted(oldSize, insertedCount);
+            }
+        }
+    }
+
+    /**
+     * 裁剪最旧的日志，并清理对应的展开/滚动状态
+     */
+    private void trimData(List<LogcatInfo> data) {
+        while (data.size() > LOG_MAX_COUNT) {
+            List<LogcatInfo> removed = data.subList(0, LOG_REMOVE_COUNT);
+            for (LogcatInfo removedInfo : removed) {
+                mExpandSet.delete(removedInfo.hashCode());
+                mScrollXSet.delete(removedInfo.hashCode());
+            }
+            removed.clear();
         }
     }
 

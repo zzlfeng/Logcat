@@ -11,6 +11,8 @@ import android.content.res.Configuration;
 import android.os.Build;
 import android.os.Build.VERSION_CODES;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.util.TypedValue;
@@ -26,14 +28,15 @@ import android.widget.TextView;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
-import androidx.recyclerview.widget.RecyclerView.Adapter;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Queue;
 import java.util.Set;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
  *    author : Android 轮子哥
@@ -52,6 +55,11 @@ public final class LogcatActivity extends AppCompatActivity
     /** 搜索关键字记录上限 */
     private static final int SEARCH_KEYWORD_MAX_COUNT = 20;
 
+    /** 日志批量消费间隔（毫秒） */
+    private static final int LOG_DRAIN_INTERVAL_MILLIS = 150;
+    /** 单次批量消费上限 */
+    private static final int LOG_DRAIN_BATCH_SIZE = 500;
+
     private View mRootView;
     private View mBarView;
     private CheckBox mCheckBox;
@@ -67,6 +75,10 @@ public final class LogcatActivity extends AppCompatActivity
 
     private LinearLayoutManager mLinearLayoutManager;
     private LogcatAdapter mAdapter;
+
+    /** 待显示日志队列（reader 线程入队，主线程批量消费） */
+    private final Queue<LogcatInfo> mPendingLogs = new ConcurrentLinkedQueue<>();
+    private final Handler mMainHandler = new Handler(Looper.getMainLooper());
 
     private String mLogLevel = LogLevel.VERBOSE;
 
@@ -201,13 +213,8 @@ public final class LogcatActivity extends AppCompatActivity
             return;
         }
 
-        Adapter<?> adapter = mRecyclerView.getAdapter();
-        if (adapter == null) {
-            // 避免频繁向主线程发送消息，如果日志过多会导致 ANR 出现
-            mAdapter.addItem(info);
-        } else {
-            mRecyclerView.post(new LogRunnable(info));
-        }
+        // 只入队，由主线程定时批量消费，避免逐条 post 造成主线程消息洪水
+        mPendingLogs.offer(info);
     }
 
     @Override
@@ -298,9 +305,11 @@ public final class LogcatActivity extends AppCompatActivity
         if (isChecked) {
             LogcatUtils.toast(this, R.string.logcat_capture_pause);
             LogcatManager.pause();
+            stopLogDrain();
             mPauseLogFlag = true;
         } else {
             LogcatManager.resume();
+            startLogDrain();
             mPauseLogFlag = false;
         }
     }
@@ -406,18 +415,32 @@ public final class LogcatActivity extends AppCompatActivity
         mLevelView.setText(mLogLevelAndAbove ? arrayLogLevel[index] + "+" : arrayLogLevel[index]);
     }
 
-    private class LogRunnable implements Runnable {
-
-        private final LogcatInfo info;
-
-        private LogRunnable(LogcatInfo info) {
-            this.info = info;
-        }
-
+    /** 批量消费待显示日志（主线程） */
+    private final Runnable mDrainRunnable = new Runnable() {
         @Override
         public void run() {
-            mAdapter.addItem(info);
+            List<LogcatInfo> batch = new ArrayList<>();
+            for (int i = 0; i < LOG_DRAIN_BATCH_SIZE; i++) {
+                LogcatInfo info = mPendingLogs.poll();
+                if (info == null) {
+                    break;
+                }
+                batch.add(info);
+            }
+            if (!batch.isEmpty()) {
+                mAdapter.addItems(batch);
+            }
+            mMainHandler.postDelayed(this, LOG_DRAIN_INTERVAL_MILLIS);
         }
+    };
+
+    private void startLogDrain() {
+        mMainHandler.removeCallbacks(mDrainRunnable);
+        mMainHandler.post(mDrainRunnable);
+    }
+
+    private void stopLogDrain() {
+        mMainHandler.removeCallbacks(mDrainRunnable);
     }
 
     /**
@@ -493,6 +516,7 @@ public final class LogcatActivity extends AppCompatActivity
             return;
         }
         LogcatManager.resume();
+        startLogDrain();
     }
 
     @Override
@@ -502,12 +526,15 @@ public final class LogcatActivity extends AppCompatActivity
             return;
         }
         LogcatManager.pause();
+        stopLogDrain();
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
         LogcatManager.destroy();
+        stopLogDrain();
+        mPendingLogs.clear();
         mSearchView.removeCallbacks(mSearchRunnable);
         mSearchView.removeCallbacks(mSearchKeywordRunnable);
     }
