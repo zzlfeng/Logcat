@@ -15,6 +15,7 @@ import com.hjq.window.EasyWindow;
 import com.hjq.window.OnWindowViewClickListener;
 import com.hjq.window.draggable.SpringBackWindowDraggableRule;
 import com.hjq.window.draggable.callback.OnSpringBackAnimCallback;
+import com.hjq.window.draggable.callback.OnWindowDraggingCallback;
 
 /**
  *    author : Android 轮子哥
@@ -45,6 +46,13 @@ final class LogcatWindow extends EasyWindow<LogcatWindow> implements OnWindowVie
 
         setWindowAnim(android.R.style.Animation_Toast);
         SpringBackWindowDraggableRule draggableRule = new SpringBackWindowDraggableRule();
+        draggableRule.setOnWindowDraggingCallback(new OnWindowDraggingCallback() {
+            @Override
+            public void onWindowDraggingStop(@NonNull EasyWindow<?> easyWindow) {
+                // 已经贴边时不会触发吸边动画，松手时先记一次
+                saveWindowLocation();
+            }
+        });
         // 吸边动画结束后才是最终位置，此时记忆
         draggableRule.setOnSpringBackAnimCallback(new OnSpringBackAnimCallback() {
             @Override
