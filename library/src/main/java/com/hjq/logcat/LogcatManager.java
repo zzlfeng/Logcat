@@ -7,9 +7,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 /**
  *    author : Android 轮子哥
@@ -33,10 +31,12 @@ final class LogcatManager {
     private static final ArrayDeque<LogcatInfo> LOG_BACKUP = new ArrayDeque<>();
     /** 备用集合上限 */
     private static final int LOG_BACKUP_MAX_COUNT = 1000;
-    /** 已投递日志的时间水位（MM-DD hh:mm:ss.mmm），重建流后据此跳过重读的旧日志 */
+    /** 已投递日志的时间水位（MM-DD hh:mm:ss.mmm），仅重读阶段兜底用 */
     private static String sLogTimeWatermark;
-    /** 与水位同一毫秒内的日志行，用于同时间戳去重（仅 reader 线程访问） */
-    private static final Set<String> LOG_SAME_TIME = new HashSet<>();
+    /** 最后投递的日志行，重读阶段以此定位重读结束（仅 reader 线程访问） */
+    private static String sLastDeliveredLine;
+    /** 是否处于重建流/重开后的重读阶段；正常读日志不过滤 */
+    private static boolean sReplaying;
 
     public static void setCanObtainUid(boolean canObtainUid) {
         sCanObtainUid = canObtainUid;
@@ -51,6 +51,8 @@ final class LogcatManager {
      */
     static void start() {
         FLAG_WORK = true;
+        // 重开页面时首条流也会从头倒缓冲区，视为重读阶段避免重复显示
+        sReplaying = sLastDeliveredLine != null;
         new Thread(new LogRunnable()).start();
     }
 
@@ -173,6 +175,7 @@ final class LogcatManager {
                             } catch (Exception ignored) {}
                             sProcess = null;
                         }
+                        sReplaying = sLastDeliveredLine != null;
                         SystemClock.sleep(5000);
                         continue;
                     }
@@ -186,30 +189,24 @@ final class LogcatManager {
                         continue;
                     }
 
-                    // 某些机型读不到新日志时会重建流并从头重读整个缓冲区，早于时间水位的行一律跳过；
-                    // 不用有限缓存去重：缓存窗口小于重读量时，淘汰顺序与重读顺序同向会导致全量重复
-                    String time = info.getTime();
-                    if (sLogTimeWatermark == null) {
-                        sLogTimeWatermark = time;
-                        LOG_SAME_TIME.add(line);
-                    } else {
-                        int cmp = time.compareTo(sLogTimeWatermark);
-                        if (cmp > 0) {
-                            sLogTimeWatermark = time;
-                            LOG_SAME_TIME.clear();
-                            LOG_SAME_TIME.add(line);
-                        } else if (cmp == 0) {
-                            if (!LOG_SAME_TIME.add(line)) {
-                                continue;
-                            }
-                        } else if (time.substring(0, 2).compareTo(sLogTimeWatermark.substring(0, 2)) < 0) {
-                            // 月份回退视为跨年，重置水位
-                            sLogTimeWatermark = time;
-                            LOG_SAME_TIME.clear();
-                            LOG_SAME_TIME.add(line);
+                    // 仅重读阶段过滤：正常读日志不过滤，避免乱序时间戳和时钟回拨静默丢日志
+                    if (sReplaying) {
+                        if (line.equals(sLastDeliveredLine)) {
+                            // 追上次最后一行，重读结束；该行本身已显示过
+                            sReplaying = false;
+                            continue;
+                        }
+                        if (info.getTime().compareTo(sLogTimeWatermark) > 0) {
+                            // 标记行已被缓冲区挤掉，按时间兜底结束重读
+                            sReplaying = false;
                         } else {
                             continue;
                         }
+                    }
+
+                    sLastDeliveredLine = line;
+                    if (sLogTimeWatermark == null || info.getTime().compareTo(sLogTimeWatermark) > 0) {
+                        sLogTimeWatermark = info.getTime();
                     }
                     // 检查与入备在同一把锁内，与 resume 的排空+置位互斥，避免丢日志或插队
                     synchronized (LOG_BACKUP) {
