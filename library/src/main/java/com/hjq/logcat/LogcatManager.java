@@ -29,6 +29,7 @@ final class LogcatManager {
     private static volatile LogRunnable sLogRunnable;
     /** 备用存放集合（暂停期间缓存，超限丢弃最旧） */
     private static final ArrayDeque<LogcatInfo> LOG_BACKUP = new ArrayDeque<>();
+    private static final Object LOG_PROCESS_LOCK = new Object();
     /** 备用集合上限 */
     private static final int LOG_BACKUP_MAX_COUNT = 1000;
     private static final long LOG_REPLAY_TIMEOUT_MILLIS = 5000;
@@ -53,7 +54,7 @@ final class LogcatManager {
         LogRunnable current;
         synchronized (LOG_BACKUP) {
             previous = sLogRunnable;
-            current = new LogRunnable(sLastDeliveredLine, sLogTimeWatermark);
+            current = new LogRunnable(sLastDeliveredLine, sLogTimeWatermark, false);
             sLogRunnable = current;
             FLAG_WORK = true;
         }
@@ -112,9 +113,20 @@ final class LogcatManager {
      * 清空日志
      */
     static void clear() {
-        try {
-            new ProcessBuilder("logcat", "-c").start();
-        } catch (IOException ignored) {}
+        LogRunnable previous;
+        LogRunnable current;
+        synchronized (LOG_BACKUP) {
+            previous = sLogRunnable;
+            current = new LogRunnable(null, null, true);
+            sLogRunnable = current;
+            sLastDeliveredLine = null;
+            sLogTimeWatermark = null;
+            LOG_BACKUP.clear();
+        }
+        if (previous != null) {
+            previous.destroyProcess();
+        }
+        new Thread(current).start();
     }
 
     /**
@@ -130,9 +142,14 @@ final class LogcatManager {
         // 还有在手机上面执行 logcat -v uid 获取日志，在 Android 10 及以下机子 uid 会为空格（一般为四个空格，还不算前后两个空格）
         // 多种日志格式拼接：logcat -v format, --format='threadtime uid usec color' -d
         String command = "logcat -v " + (sCanObtainUid ? "uid" : "threadtime");
-        java.lang.Process process = Runtime.getRuntime().exec(command);
-        owner.mProcess.set(process);
-        return new BufferedReader(new InputStreamReader(process.getInputStream()));
+        synchronized (LOG_PROCESS_LOCK) {
+            if (!owner.isCurrent()) {
+                return null;
+            }
+            java.lang.Process process = Runtime.getRuntime().exec(command);
+            owner.mProcess.set(process);
+            return new BufferedReader(new InputStreamReader(process.getInputStream()));
+        }
     }
 
     /**
@@ -152,11 +169,13 @@ final class LogcatManager {
     private static class LogRunnable implements Runnable {
 
         private final AtomicReference<java.lang.Process> mProcess = new AtomicReference<>();
+        private final boolean mClearBuffer;
         private String mLastDeliveredLine;
         private String mLogTimeWatermark;
         private boolean mReplaying;
 
-        LogRunnable(String lastDeliveredLine, String logTimeWatermark) {
+        LogRunnable(String lastDeliveredLine, String logTimeWatermark, boolean clearBuffer) {
+            mClearBuffer = clearBuffer;
             mLastDeliveredLine = lastDeliveredLine;
             mLogTimeWatermark = logTimeWatermark;
             mReplaying = lastDeliveredLine != null;
@@ -180,6 +199,33 @@ final class LogcatManager {
             BufferedReader reader = null;
             long replayStartTime = 0;
             try {
+                if (mClearBuffer) {
+                    // 旧清空命令退出前，新会话不能启动读取或再次清空
+                    synchronized (LOG_PROCESS_LOCK) {
+                        if (!isCurrent()) {
+                            return;
+                        }
+                        try {
+                            java.lang.Process process = new ProcessBuilder("logcat", "-c").start();
+                            mProcess.set(process);
+                            boolean interrupted = false;
+                            while (true) {
+                                try {
+                                    process.waitFor();
+                                    break;
+                                } catch (InterruptedException e) {
+                                    interrupted = true;
+                                    destroyProcess();
+                                }
+                            }
+                            destroyProcess();
+                            if (interrupted) {
+                                Thread.currentThread().interrupt();
+                                return;
+                            }
+                        } catch (IOException ignored) {}
+                    }
+                }
                 String line;
                 while (isCurrent()) {
                     if (reader == null) {
