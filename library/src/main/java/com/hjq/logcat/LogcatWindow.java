@@ -66,7 +66,7 @@ final class LogcatWindow extends EasyWindow<LogcatWindow> implements OnWindowVie
         if (hasMatchedSavedLocation(metrics.densityDpi)) {
             setWindowLocation(Gravity.TOP | Gravity.LEFT, mSavedLocation[0], mSavedLocation[1]);
         } else {
-            applyDefaultWindowLocation();
+            applyDefaultWindowLocation(metrics.widthPixels, metrics.heightPixels);
         }
 
         SpringBackWindowDraggableRule draggableRule = new SpringBackWindowDraggableRule();
@@ -129,7 +129,7 @@ final class LogcatWindow extends EasyWindow<LogcatWindow> implements OnWindowVie
             }
         } else {
             // 可见区域尺寸、dpi 或窗口模式变化，记忆失效
-            applyDefaultWindowLocation();
+            applyDefaultWindowLocation(visibleSize[0], visibleSize[1]);
         }
     }
 
@@ -139,8 +139,8 @@ final class LogcatWindow extends EasyWindow<LogcatWindow> implements OnWindowVie
                 && mSavedLocation[5] == mWindowMode;
     }
 
-    private void applyDefaultWindowLocation() {
-        int[] location = LogcatConfig.getFloatingWindowDefaultLocation();
+    private void applyDefaultWindowLocation(int screenWidth, int screenHeight) {
+        int[] location = LogcatConfig.getFloatingWindowDefaultLocation(screenWidth, screenHeight);
         setWindowLocation(location[0], location[1], location[2]);
     }
 

@@ -3,6 +3,7 @@ package com.hjq.logcat;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.util.Log;
 import android.view.Gravity;
 import java.util.Locale;
 
@@ -13,6 +14,8 @@ import java.util.Locale;
  *    desc   : 日志配置
  */
 final class LogcatConfig {
+
+    private static final String TAG = "LogcatConfig";
 
     @SuppressLint("StaticFieldLeak")
     private static Context sApplicationContext;
@@ -92,20 +95,26 @@ final class LogcatConfig {
                 x + "," + y + "," + visibleWidth + "," + visibleHeight + "," + densityDpi + "," + mode).apply();
     }
 
-    static int[] getFloatingWindowDefaultLocation() {
+    static int[] getFloatingWindowDefaultLocation(int screenWidth, int screenHeight) {
         int gravity = parseGravity(LogcatUtils.getMetaStringData(sApplicationContext,
                 LogcatContract.META_DATA_LOGCAT_FLOATING_WINDOW_GRAVITY));
         return new int[]{gravity,
-                getMetaInt(LogcatContract.META_DATA_LOGCAT_FLOATING_WINDOW_OFFSET_X),
-                getMetaInt(LogcatContract.META_DATA_LOGCAT_FLOATING_WINDOW_OFFSET_Y)};
+                getMetaInt(LogcatContract.META_DATA_LOGCAT_FLOATING_WINDOW_OFFSET_X, screenWidth),
+                getMetaInt(LogcatContract.META_DATA_LOGCAT_FLOATING_WINDOW_OFFSET_Y, screenHeight)};
     }
 
-    private static int getMetaInt(String metaKey) {
+    private static int getMetaInt(String metaKey, int screenSize) {
         String value = LogcatUtils.getMetaStringData(sApplicationContext, metaKey);
         if (value != null) {
             try {
-                return Integer.parseInt(value.trim());
+                int offset = Integer.parseInt(value.trim());
+                if (offset >= -screenSize && offset <= screenSize) {
+                    return offset;
+                }
+                // 资源引用等写法会解析出资源 id，超出屏幕范围的一律视为非法配置
+                Log.w(TAG, metaKey + " 超出屏幕范围，按 0 处理：" + offset);
             } catch (NumberFormatException ignored) {
+                // 非整数配置按默认值处理
             }
         }
         return 0;
@@ -113,44 +122,69 @@ final class LogcatConfig {
 
     private static int parseGravity(String value) {
         int defaultGravity = Gravity.END | Gravity.CENTER_VERTICAL;
-        if (value == null || value.isEmpty()) {
+        if (value == null || value.trim().isEmpty()) {
             return defaultGravity;
         }
-        int gravity = 0;
+        int horizontal = 0;
+        int vertical = 0;
+        boolean conflict = false;
+        boolean invalid = false;
         for (String token : value.split("\\|")) {
-            switch (token.trim()) {
+            switch (token.trim().toLowerCase(Locale.ROOT)) {
                 case "left":
-                    gravity |= Gravity.LEFT;
+                    conflict |= horizontal != 0 && horizontal != Gravity.LEFT;
+                    horizontal = Gravity.LEFT;
                     break;
                 case "right":
-                    gravity |= Gravity.RIGHT;
+                    conflict |= horizontal != 0 && horizontal != Gravity.RIGHT;
+                    horizontal = Gravity.RIGHT;
                     break;
                 case "start":
-                    gravity |= Gravity.START;
+                    conflict |= horizontal != 0 && horizontal != Gravity.START;
+                    horizontal = Gravity.START;
                     break;
                 case "end":
-                    gravity |= Gravity.END;
+                    conflict |= horizontal != 0 && horizontal != Gravity.END;
+                    horizontal = Gravity.END;
                     break;
                 case "top":
-                    gravity |= Gravity.TOP;
+                    conflict |= vertical != 0 && vertical != Gravity.TOP;
+                    vertical = Gravity.TOP;
                     break;
                 case "bottom":
-                    gravity |= Gravity.BOTTOM;
+                    conflict |= vertical != 0 && vertical != Gravity.BOTTOM;
+                    vertical = Gravity.BOTTOM;
                     break;
                 case "center":
-                    gravity |= Gravity.CENTER;
+                    conflict |= (horizontal != 0 && horizontal != Gravity.CENTER_HORIZONTAL)
+                            || (vertical != 0 && vertical != Gravity.CENTER_VERTICAL);
+                    horizontal = Gravity.CENTER_HORIZONTAL;
+                    vertical = Gravity.CENTER_VERTICAL;
                     break;
                 case "center_vertical":
-                    gravity |= Gravity.CENTER_VERTICAL;
+                    conflict |= vertical != 0 && vertical != Gravity.CENTER_VERTICAL;
+                    vertical = Gravity.CENTER_VERTICAL;
                     break;
                 case "center_horizontal":
-                    gravity |= Gravity.CENTER_HORIZONTAL;
+                    conflict |= horizontal != 0 && horizontal != Gravity.CENTER_HORIZONTAL;
+                    horizontal = Gravity.CENTER_HORIZONTAL;
                     break;
                 default:
+                    invalid = true;
                     break;
             }
         }
-        return gravity == 0 ? defaultGravity : gravity;
+        if (horizontal == 0 && vertical == 0) {
+            Log.w(TAG, "悬浮窗 gravity 配置无效，按默认值处理：" + value);
+            return defaultGravity;
+        }
+        if (invalid) {
+            Log.w(TAG, "悬浮窗 gravity 包含无法识别的方向：" + value);
+        }
+        if (conflict) {
+            Log.w(TAG, "悬浮窗 gravity 存在重复方向，取最后一个：" + value);
+        }
+        return horizontal | vertical;
     }
 
     static String getSearchKeyConfig() {
