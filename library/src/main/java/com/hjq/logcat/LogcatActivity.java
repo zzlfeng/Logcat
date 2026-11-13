@@ -31,7 +31,9 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  *    author : Android 轮子哥
@@ -46,6 +48,9 @@ public final class LogcatActivity extends AppCompatActivity
 
     private static final String[] ARRAY_LOG_LEVEL = {"Verbose", "Debug", "Info", "Warn", "Error"};
     private static final String[] ARRAY_LOG_LEVEL_PORTRAIT = {"V", "D", "I", "W", "E"};
+
+    /** 搜索关键字记录上限 */
+    private static final int SEARCH_KEYWORD_MAX_COUNT = 20;
 
     private View mRootView;
     private View mBarView;
@@ -72,7 +77,7 @@ public final class LogcatActivity extends AppCompatActivity
     private boolean mPauseLogFlag;
 
     /** Tag 过滤规则 */
-    private final List<String> mTagFilter = new ArrayList<>();
+    private final Set<String> mTagFilter = new HashSet<>();
 
     /** 搜索关键字 */
     private final List<String> mSearchKeyword = new ArrayList<>();
@@ -624,5 +629,8 @@ public final class LogcatActivity extends AppCompatActivity
             return;
         }
         mSearchKeyword.add(0, keyword);
+        if (mSearchKeyword.size() > SEARCH_KEYWORD_MAX_COUNT) {
+            mSearchKeyword.remove(mSearchKeyword.size() - 1);
+        }
     };
 }
