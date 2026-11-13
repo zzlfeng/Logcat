@@ -218,10 +218,10 @@ public final class LogcatActivity extends AppCompatActivity
             return;
         }
 
-        // 只入队，由主线程批量消费；仅当没有待执行的处理时才安排一次，避免逐条 post
+        // 只入队，由主线程批量消费；延迟一个间隔再处理以攒批，避免逐条刷新列表
         mPendingLogs.offer(info);
         if (mDrainScheduled.compareAndSet(0, 1)) {
-            mMainHandler.post(mDrainRunnable);
+            mMainHandler.postDelayed(mDrainRunnable, LOG_DRAIN_INTERVAL_MILLIS);
         }
     }
 
@@ -428,7 +428,11 @@ public final class LogcatActivity extends AppCompatActivity
     private final Runnable mDrainRunnable = new Runnable() {
         @Override
         public void run() {
+            // 先清标记再取队列：期间入队的日志会自行安排下一轮，不会漏
             mDrainScheduled.set(0);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && isDestroyed()) {
+                return;
+            }
             List<LogcatInfo> batch = new ArrayList<>();
             LogcatInfo info;
             while ((info = mPendingLogs.poll()) != null) {
@@ -440,10 +444,6 @@ public final class LogcatActivity extends AppCompatActivity
             }
             if (!batch.isEmpty()) {
                 mAdapter.addItems(batch);
-            }
-            // 消费期间又有新日志入队时续跑；CAS 保证不会叠加多条消费链
-            if (!mPendingLogs.isEmpty() && mDrainScheduled.compareAndSet(0, 1)) {
-                mMainHandler.postDelayed(this, LOG_DRAIN_INTERVAL_MILLIS);
             }
         }
     };
