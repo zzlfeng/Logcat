@@ -281,7 +281,8 @@ final class LogcatAdapter extends RecyclerView.Adapter<LogcatAdapter.ViewHolder>
     }
 
     private void filterData() {
-        if (TextUtils.isEmpty(mKeyword) && LogLevel.VERBOSE.equals(mLogLevel)) {
+        // V 及以上模式等同于不过滤；仅当前等级模式下 V 仍需过滤
+        if (TextUtils.isEmpty(mKeyword) && mLogLevelAndAbove && LogLevel.VERBOSE.equals(mLogLevel)) {
             mShowData = mAllData;
             return;
         }
@@ -304,11 +305,10 @@ final class LogcatAdapter extends RecyclerView.Adapter<LogcatAdapter.ViewHolder>
     }
 
     private boolean isLevelConform(LogcatInfo info) {
-        if (LogLevel.VERBOSE.equals(mLogLevel)) {
-            return true;
-        }
         if (mLogLevelAndAbove) {
-            return LogLevel.getLevelSeverity(info.getLevel()) >= LogLevel.getLevelSeverity(mLogLevel);
+            // V 及以上即全部日志，未知等级也保留（沿用旧行为）
+            return LogLevel.VERBOSE.equals(mLogLevel) ||
+                    LogLevel.getLevelSeverity(info.getLevel()) >= LogLevel.getLevelSeverity(mLogLevel);
         }
         return info.getLevel().equals(mLogLevel);
     }
