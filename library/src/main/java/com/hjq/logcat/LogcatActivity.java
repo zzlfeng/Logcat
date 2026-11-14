@@ -31,7 +31,6 @@ import androidx.recyclerview.widget.RecyclerView;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
@@ -512,18 +511,24 @@ public final class LogcatActivity extends AppCompatActivity
 
         try {
             List<String> newTagFilter = new ArrayList<>(mTagFilter);
-            newTagFilter.removeAll(Arrays.asList(getResources().getStringArray(R.array.logcat_filter_list)));
+            List<String> builtinTagFilter = new ArrayList<>();
+            for (String builtinTag : getResources().getStringArray(R.array.logcat_filter_list)) {
+                if (builtinTag != null) {
+                    // 集合里存的是 trim 后的 Tag，内置列表也要同口径
+                    builtinTagFilter.add(builtinTag.trim());
+                }
+            }
+            newTagFilter.removeAll(builtinTagFilter);
 
             File file = LogcatUtils.writeTagFilter(this, newTagFilter);
             LogcatUtils.toast(this, getResources().getString(R.string.logcat_shield_succeed) + file.getPath());
-
-            // 从完整列表和显示列表中删除关于这个 Tag 的日志，取消筛选后也不会复活
-            mAdapter.removeTag(tag);
-
         } catch (IOException e) {
             e.printStackTrace();
             LogcatUtils.toast(this, R.string.logcat_shield_fail);
         }
+
+        // 写文件失败也要清理列表，保证屏蔽状态与界面一致
+        mAdapter.removeTag(tag);
     }
 
     @SuppressWarnings("deprecation")

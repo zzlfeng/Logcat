@@ -30,12 +30,37 @@ import com.hjq.window.draggable.callback.OnWindowDraggingCallback;
  */
 final class LogcatWindow extends EasyWindow<LogcatWindow> implements OnWindowViewClickListener<View> {
 
-    private static final int WINDOW_MODE_LOCAL = 1;
-    private static final int WINDOW_MODE_GLOBAL = 2;
-
-    private int mWindowMode;
     private int mWindowSize;
-    private int[] mSavedLocation;
+    private int mLastVisibleWidth = -1;
+    private int mLastVisibleHeight = -1;
+    private boolean mFirstLayoutDone;
+    private boolean mLocationListenerAdded;
+
+    /** 首次布局后定位，之后只在可见区域尺寸变化时夹取或重新贴边 */
+    private final ViewTreeObserver.OnGlobalLayoutListener mLocationListener =
+            new ViewTreeObserver.OnGlobalLayoutListener() {
+                @Override
+                public void onGlobalLayout() {
+                    DisplayMetrics metrics = getContext().getResources().getDisplayMetrics();
+                    int[] visibleSize = getVisibleWindowSize(metrics);
+                    if (!mFirstLayoutDone) {
+                        mFirstLayoutDone = true;
+                        mLastVisibleWidth = visibleSize[0];
+                        mLastVisibleHeight = visibleSize[1];
+                        applySavedWindowLocation(visibleSize[0], visibleSize[1]);
+                        // 定位完成后再显示，避免先在旧位置出现再跳过去
+                        setWindowAlpha(1f);
+                        return;
+                    }
+                    if (visibleSize[0] == mLastVisibleWidth && visibleSize[1] == mLastVisibleHeight) {
+                        return;
+                    }
+                    mLastVisibleWidth = visibleSize[0];
+                    mLastVisibleHeight = visibleSize[1];
+                    // 旋转、分屏、软键盘都按记忆重排，尺寸恢复后能回到原位
+                    applySavedWindowLocation(visibleSize[0], visibleSize[1]);
+                }
+            };
 
     public LogcatWindow(Application application) {
         super(application);
@@ -48,8 +73,6 @@ final class LogcatWindow extends EasyWindow<LogcatWindow> implements OnWindowVie
     }
 
     private void init(Context context) {
-        mWindowMode = context instanceof Activity ? WINDOW_MODE_LOCAL : WINDOW_MODE_GLOBAL;
-
         ImageView imageView = new ImageView(context.getApplicationContext());
         imageView.setId(android.R.id.icon);
         imageView.setImageResource(R.drawable.logcat_selector_floating);
@@ -60,16 +83,16 @@ final class LogcatWindow extends EasyWindow<LogcatWindow> implements OnWindowVie
         setWindowSize(size, size);
 
         setWindowAnim(android.R.style.Animation_Toast);
+        // 首次布局完成定位前不可见，避免显示出现跳动
+        setWindowAlpha(0f);
 
-        DisplayMetrics metrics = context.getResources().getDisplayMetrics();
-        mSavedLocation = LogcatConfig.getFloatingWindowLocationConfig();
-        if (hasMatchedSavedLocation(metrics.densityDpi)) {
-            setWindowLocation(Gravity.TOP | Gravity.LEFT, mSavedLocation[0], mSavedLocation[1]);
-        } else {
-            applyDefaultWindowLocation(metrics.widthPixels, metrics.heightPixels);
-        }
-
-        SpringBackWindowDraggableRule draggableRule = new SpringBackWindowDraggableRule();
+        SpringBackWindowDraggableRule draggableRule = new SpringBackWindowDraggableRule() {
+            @Override
+            public boolean isFollowScreenRotationChanges() {
+                // 旋转定位统一由 mLocationListener 处理，避免拖拽规则按旧屏幕尺寸覆盖坐标
+                return false;
+            }
+        };
         draggableRule.setOnWindowDraggingCallback(new OnWindowDraggingCallback() {
             @Override
             public void onWindowDraggingStop(@NonNull EasyWindow<?> easyWindow) {
@@ -89,54 +112,70 @@ final class LogcatWindow extends EasyWindow<LogcatWindow> implements OnWindowVie
         setOnWindowLifecycleCallback(new OnWindowLifecycleCallback() {
             @Override
             public void onWindowShow(@NonNull EasyWindow<?> easyWindow) {
-                // 显示并布局后才能拿到真实的可见区域尺寸
-                restoreWindowLocationWhenLaidOut();
+                ViewGroup rootLayout = getRootLayout();
+                if (rootLayout == null) {
+                    mFirstLayoutDone = true;
+                    DisplayMetrics metrics = getContext().getResources().getDisplayMetrics();
+                    applySavedWindowLocation(metrics.widthPixels, metrics.heightPixels);
+                    setWindowAlpha(1f);
+                    return;
+                }
+                if (!mLocationListenerAdded) {
+                    mLocationListenerAdded = true;
+                    rootLayout.getViewTreeObserver().addOnGlobalLayoutListener(mLocationListener);
+                }
+            }
+
+            @Override
+            public void onWindowCancel(@NonNull EasyWindow<?> easyWindow) {
+                removeLocationListener();
+            }
+
+            @Override
+            public void onWindowRecycle(@NonNull EasyWindow<?> easyWindow) {
+                removeLocationListener();
             }
         });
         setOnClickListenerByView(android.R.id.icon, this);
     }
 
-    private void restoreWindowLocationWhenLaidOut() {
+    /**
+     * 页面恢复时同步最新记忆位置（页面内模式每个页面各有一个悬浮窗实例）
+     */
+    void syncWindowLocationFromConfig() {
+        if (!isShowing() || !mFirstLayoutDone) {
+            return;
+        }
+        DisplayMetrics metrics = getContext().getResources().getDisplayMetrics();
+        int[] visibleSize = getVisibleWindowSize(metrics);
+        mLastVisibleWidth = visibleSize[0];
+        mLastVisibleHeight = visibleSize[1];
+        applySavedWindowLocation(visibleSize[0], visibleSize[1]);
+    }
+
+    private void removeLocationListener() {
         ViewGroup rootLayout = getRootLayout();
         if (rootLayout == null) {
             return;
         }
-        rootLayout.getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
-            @Override
-            public void onGlobalLayout() {
-                ViewTreeObserver observer = rootLayout.getViewTreeObserver();
-                if (observer.isAlive()) {
-                    observer.removeOnGlobalLayoutListener(this);
-                }
-                restoreWindowLocation();
-            }
-        });
-    }
-
-    private void restoreWindowLocation() {
-        DisplayMetrics metrics = getContext().getResources().getDisplayMetrics();
-        int[] visibleSize = getVisibleWindowSize(metrics);
-        if (hasMatchedSavedLocation(metrics.densityDpi)
-                && mSavedLocation[2] == visibleSize[0]
-                && mSavedLocation[3] == visibleSize[1]) {
-            int maxX = Math.max(visibleSize[0] - mWindowSize, 0);
-            int maxY = Math.max(visibleSize[1] - mWindowSize, 0);
-            int x = Math.min(Math.max(mSavedLocation[0], 0), maxX);
-            int y = Math.min(Math.max(mSavedLocation[1], 0), maxY);
-            if (x != mSavedLocation[0] || y != mSavedLocation[1]) {
-                setWindowLocation(Gravity.TOP | Gravity.LEFT, x, y);
-                saveWindowLocation();
-            }
-        } else {
-            // 可见区域尺寸、dpi 或窗口模式变化，记忆失效
-            applyDefaultWindowLocation(visibleSize[0], visibleSize[1]);
+        ViewTreeObserver observer = rootLayout.getViewTreeObserver();
+        if (observer.isAlive()) {
+            observer.removeOnGlobalLayoutListener(mLocationListener);
         }
+        mLocationListenerAdded = false;
     }
 
-    private boolean hasMatchedSavedLocation(int densityDpi) {
-        return mSavedLocation != null
-                && mSavedLocation[4] == densityDpi
-                && mSavedLocation[5] == mWindowMode;
+    private void applySavedWindowLocation(int visibleWidth, int visibleHeight) {
+        float[] saved = LogcatConfig.getFloatingWindowLocationConfig();
+        if (saved == null) {
+            applyDefaultWindowLocation(visibleWidth, visibleHeight);
+            return;
+        }
+        int maxX = Math.max(visibleWidth - mWindowSize, 0);
+        int maxY = Math.max(visibleHeight - mWindowSize, 0);
+        int x = (int) saved[0] == LogcatConfig.FLOATING_WINDOW_EDGE_RIGHT ? maxX : 0;
+        int y = Math.round(saved[1] * maxY);
+        setWindowLocation(Gravity.TOP | Gravity.LEFT, x, y);
     }
 
     private void applyDefaultWindowLocation(int screenWidth, int screenHeight) {
@@ -163,8 +202,14 @@ final class LogcatWindow extends EasyWindow<LogcatWindow> implements OnWindowVie
         }
         DisplayMetrics metrics = getContext().getResources().getDisplayMetrics();
         int[] visibleSize = getVisibleWindowSize(metrics);
-        LogcatConfig.setFloatingWindowLocationConfig(params.x, params.y,
-                visibleSize[0], visibleSize[1], metrics.densityDpi, mWindowMode);
+        int maxX = Math.max(visibleSize[0] - mWindowSize, 0);
+        int maxY = Math.max(visibleSize[1] - mWindowSize, 0);
+        int x = Math.min(Math.max(params.x, 0), maxX);
+        int y = Math.min(Math.max(params.y, 0), maxY);
+        int edge = x > maxX / 2 ? LogcatConfig.FLOATING_WINDOW_EDGE_RIGHT
+                : LogcatConfig.FLOATING_WINDOW_EDGE_LEFT;
+        float ratio = maxY > 0 ? (float) y / maxY : 0f;
+        LogcatConfig.setFloatingWindowLocationConfig(edge, ratio);
     }
 
     @Override

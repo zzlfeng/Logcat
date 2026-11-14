@@ -17,9 +17,17 @@ final class LogcatConfig {
 
     private static final String TAG = "LogcatConfig";
 
+    /** 悬浮窗贴左边 */
+    static final int FLOATING_WINDOW_EDGE_LEFT = 0;
+    /** 悬浮窗贴右边 */
+    static final int FLOATING_WINDOW_EDGE_RIGHT = 1;
+
     @SuppressLint("StaticFieldLeak")
     private static Context sApplicationContext;
     private static SharedPreferences sConfig;
+    private static String sFloatingWindowGravityMeta;
+    private static String sFloatingWindowOffsetXMeta;
+    private static String sFloatingWindowOffsetYMeta;
 
     /**
      * 初始化
@@ -28,6 +36,13 @@ final class LogcatConfig {
         sApplicationContext = context.getApplicationContext();
         sConfig = sApplicationContext.getSharedPreferences(
                 LogcatContract.SP_FILE_NAME, Context.MODE_PRIVATE);
+        // 清单 meta 只查一次缓存起来，避免每次创建悬浮窗都跨进程读取
+        sFloatingWindowGravityMeta = LogcatUtils.getMetaStringData(sApplicationContext,
+                LogcatContract.META_DATA_LOGCAT_FLOATING_WINDOW_GRAVITY);
+        sFloatingWindowOffsetXMeta = LogcatUtils.getMetaStringData(sApplicationContext,
+                LogcatContract.META_DATA_LOGCAT_FLOATING_WINDOW_OFFSET_X);
+        sFloatingWindowOffsetYMeta = LogcatUtils.getMetaStringData(sApplicationContext,
+                LogcatContract.META_DATA_LOGCAT_FLOATING_WINDOW_OFFSET_Y);
     }
 
     static String getLogLevelConfig() {
@@ -59,26 +74,23 @@ final class LogcatConfig {
     }
 
     /**
-     * 悬浮窗位置记录：x,y,可见区域宽,可见区域高,dpi,窗口模式，记录无效时返回 null
+     * 悬浮窗位置记录：贴边方向 + 纵向比例（0~1），记录无效时返回 null
      */
-    static int[] getFloatingWindowLocationConfig() {
+    static float[] getFloatingWindowLocationConfig() {
         String saved = sConfig.getString(LogcatContract.SP_KEY_LOGCAT_FLOATING_WINDOW_LOCATION, null);
         if (saved == null) {
             return null;
         }
         String[] parts = saved.split(",");
-        if (parts.length != 6) {
+        if (parts.length != 2) {
             return null;
         }
         try {
-            int x = Integer.parseInt(parts[0]);
-            int y = Integer.parseInt(parts[1]);
-            int visibleWidth = Integer.parseInt(parts[2]);
-            int visibleHeight = Integer.parseInt(parts[3]);
-            int densityDpi = Integer.parseInt(parts[4]);
-            int mode = Integer.parseInt(parts[5]);
-            if (visibleWidth > 0 && visibleHeight > 0 && densityDpi > 0) {
-                return new int[]{x, y, visibleWidth, visibleHeight, densityDpi, mode};
+            int edge = Integer.parseInt(parts[0]);
+            float ratio = Float.parseFloat(parts[1]);
+            if ((edge == FLOATING_WINDOW_EDGE_LEFT || edge == FLOATING_WINDOW_EDGE_RIGHT)
+                    && ratio >= 0 && ratio <= 1) {
+                return new float[]{edge, ratio};
             }
         } catch (NumberFormatException ignored) {
             // 记录损坏时按无记忆处理
@@ -87,24 +99,22 @@ final class LogcatConfig {
     }
 
     /**
-     * 记录的是可见区域坐标系下的绝对坐标，可见区域尺寸、dpi 或窗口模式变化时由调用方判失效
+     * 只记贴边方向与纵向比例，可见区域尺寸、dpi 或窗口模式变化时由调用方重新换算并夹取
      */
-    static void setFloatingWindowLocationConfig(int x, int y, int visibleWidth, int visibleHeight,
-            int densityDpi, int mode) {
+    static void setFloatingWindowLocationConfig(int edge, float ratio) {
         sConfig.edit().putString(LogcatContract.SP_KEY_LOGCAT_FLOATING_WINDOW_LOCATION,
-                x + "," + y + "," + visibleWidth + "," + visibleHeight + "," + densityDpi + "," + mode).apply();
+                edge + "," + ratio).apply();
     }
 
     static int[] getFloatingWindowDefaultLocation(int screenWidth, int screenHeight) {
-        int gravity = parseGravity(LogcatUtils.getMetaStringData(sApplicationContext,
-                LogcatContract.META_DATA_LOGCAT_FLOATING_WINDOW_GRAVITY));
-        return new int[]{gravity,
-                getMetaInt(LogcatContract.META_DATA_LOGCAT_FLOATING_WINDOW_OFFSET_X, screenWidth),
-                getMetaInt(LogcatContract.META_DATA_LOGCAT_FLOATING_WINDOW_OFFSET_Y, screenHeight)};
+        return new int[]{parseGravity(sFloatingWindowGravityMeta),
+                parseMetaOffset(sFloatingWindowOffsetXMeta, screenWidth,
+                        LogcatContract.META_DATA_LOGCAT_FLOATING_WINDOW_OFFSET_X),
+                parseMetaOffset(sFloatingWindowOffsetYMeta, screenHeight,
+                        LogcatContract.META_DATA_LOGCAT_FLOATING_WINDOW_OFFSET_Y)};
     }
 
-    private static int getMetaInt(String metaKey, int screenSize) {
-        String value = LogcatUtils.getMetaStringData(sApplicationContext, metaKey);
+    private static int parseMetaOffset(String value, int screenSize, String metaKey) {
         if (value != null) {
             try {
                 int offset = Integer.parseInt(value.trim());

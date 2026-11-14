@@ -5,6 +5,8 @@ import android.app.Application;
 import android.os.Bundle;
 import android.util.TypedValue;
 import androidx.annotation.NonNull;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  *    author : Android 轮子哥
@@ -18,6 +20,8 @@ final class LogcatLocalDispatcher implements Application.ActivityLifecycleCallba
         application.registerActivityLifecycleCallbacks(new LogcatLocalDispatcher());
     }
 
+    private final Map<Activity, LogcatWindow> mWindows = new HashMap<>();
+
     @Override
     public void onActivityCreated(@NonNull Activity activity, Bundle savedInstanceState) {
         if (activity instanceof LogcatActivity) {
@@ -28,8 +32,9 @@ final class LogcatLocalDispatcher implements Application.ActivityLifecycleCallba
             return;
         }
         // 在每个 Activity 创建的时候派发
-        new LogcatWindow(activity)
-                .show();
+        LogcatWindow window = new LogcatWindow(activity);
+        window.show();
+        mWindows.put(activity, window);
     }
 
     @Override
@@ -39,7 +44,11 @@ final class LogcatLocalDispatcher implements Application.ActivityLifecycleCallba
 
     @Override
     public void onActivityResumed(@NonNull Activity activity) {
-        // default implementation ignored
+        // 返回栈里的页面恢复时同步最新记忆位置
+        LogcatWindow window = mWindows.get(activity);
+        if (window != null) {
+            window.syncWindowLocationFromConfig();
+        }
     }
 
     @Override
@@ -59,7 +68,7 @@ final class LogcatLocalDispatcher implements Application.ActivityLifecycleCallba
 
     @Override
     public void onActivityDestroyed(@NonNull Activity activity) {
-        // default implementation ignored
+        mWindows.remove(activity);
     }
 
     /**

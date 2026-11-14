@@ -117,10 +117,9 @@ final class LogcatManager {
         LogRunnable current;
         synchronized (LOG_BACKUP) {
             previous = sLogRunnable;
-            current = new LogRunnable(null, null, true);
+            // 保留最后一行与水位：-c 失败或只清了部分缓冲区时，新会话仍能跳过已清日志
+            current = new LogRunnable(sLastDeliveredLine, sLogTimeWatermark, true);
             sLogRunnable = current;
-            sLastDeliveredLine = null;
-            sLogTimeWatermark = null;
             LOG_BACKUP.clear();
         }
         if (previous != null) {
@@ -173,6 +172,8 @@ final class LogcatManager {
         private String mLastDeliveredLine;
         private String mLogTimeWatermark;
         private boolean mReplaying;
+        /** 重读阶段累计读取耗时，跨多次重连续算，EOF 等待不计入 */
+        private long replayReadMillis;
 
         LogRunnable(String lastDeliveredLine, String logTimeWatermark, boolean clearBuffer) {
             mClearBuffer = clearBuffer;
@@ -259,11 +260,13 @@ final class LogcatManager {
                         reader = null;
                         destroyProcess();
                         boolean wasReplaying = mReplaying;
+                        // 先累计本轮实际读取耗时，下面的 EOF 等待不能计入重读超时
+                        replayReadMillis = wasReplaying
+                                ? replayReadMillis + (SystemClock.elapsedRealtime() - replayStartTime) : 0;
                         mReplaying = mLastDeliveredLine != null;
                         SystemClock.sleep(5000);
-                        // 连续 EOF 重建不能每轮重置超时，导致重读永远无法结束
-                        if (wasReplaying
-                                && SystemClock.elapsedRealtime() - replayStartTime >= LOG_REPLAY_TIMEOUT_MILLIS) {
+                        // 连续 EOF 要累计到上限才放弃过滤，避免一次重启就把整段缓冲区重推
+                        if (wasReplaying && replayReadMillis >= LOG_REPLAY_TIMEOUT_MILLIS) {
                             mReplaying = false;
                         }
                         continue;
@@ -282,12 +285,14 @@ final class LogcatManager {
                     if (mReplaying) {
                         if (line.equals(mLastDeliveredLine)) {
                             // 追上次最后一行，重读结束；该行本身已显示过
+                            // 同毫秒同内容的循环日志会提前命中这里导致重读提前结束，属于已知取舍
                             mReplaying = false;
                             continue;
                         }
                         // 标记缺失且时间回退时，也必须有有限的重读退出边界
                         if (info.getTime().compareTo(mLogTimeWatermark) > 0
-                                || SystemClock.elapsedRealtime() - replayStartTime >= LOG_REPLAY_TIMEOUT_MILLIS) {
+                                || replayReadMillis + (SystemClock.elapsedRealtime() - replayStartTime)
+                                        >= LOG_REPLAY_TIMEOUT_MILLIS) {
                             mReplaying = false;
                         } else {
                             continue;
