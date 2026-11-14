@@ -56,7 +56,8 @@ final class LogcatManager {
             previous = sLogRunnable;
             current = new LogRunnable(sLastDeliveredLine, sLogTimeWatermark, false);
             sLogRunnable = current;
-            FLAG_WORK = true;
+            // 不在此处直接置 FLAG_WORK = true，交由 onResume() -> resume() 锁内排空旧备份后再置位，
+            // 避免新会话 reader 抢先投递导致首屏日志乱序
         }
         if (previous != null) {
             previous.destroyProcess();
@@ -209,14 +210,24 @@ final class LogcatManager {
                         try {
                             java.lang.Process process = new ProcessBuilder("logcat", "-c").start();
                             mProcess.set(process);
+                            long startWait = SystemClock.elapsedRealtime();
                             boolean interrupted = false;
-                            while (true) {
+                            // 轮询 exitValue() 增加 5 秒超时兜底（兼容 API 16，不用 Process.waitFor(long, TimeUnit)）
+                            // 异常设备上 logd 僵死时可及时放行 LOG_PROCESS_LOCK，防止日志捕获锁死
+                            while (isCurrent()) {
                                 try {
-                                    process.waitFor();
+                                    process.exitValue();
                                     break;
-                                } catch (InterruptedException e) {
-                                    interrupted = true;
-                                    destroyProcess();
+                                } catch (IllegalThreadStateException e) {
+                                    if (SystemClock.elapsedRealtime() - startWait >= 5000) {
+                                        break;
+                                    }
+                                    try {
+                                        Thread.sleep(100);
+                                    } catch (InterruptedException ie) {
+                                        interrupted = true;
+                                        break;
+                                    }
                                 }
                             }
                             destroyProcess();

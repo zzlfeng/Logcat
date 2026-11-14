@@ -354,18 +354,21 @@ public final class LogcatActivity extends AppCompatActivity
         new ChooseWindow(this)
                 .setList(R.string.logcat_options_copy, R.string.logcat_options_share, R.string.logcat_options_delete, R.string.logcat_options_shield)
                 .setListener(location -> {
+                    if (info == null) {
+                        return;
+                    }
                     switch (location) {
                         case 0:
-                            copyLog(position);
+                            copyLog(info);
                             break;
                         case 1:
-                            shareLog(position);
+                            shareLog(info);
                             break;
                         case 2:
-                            mAdapter.removeItem(position);
+                            mAdapter.removeItem(info);
                             break;
                         case 3:
-                            addFilter(mAdapter.getItem(position).getTag());
+                            addFilter(info.getTag());
                             break;
                         default:
                             break;
@@ -375,20 +378,20 @@ public final class LogcatActivity extends AppCompatActivity
         return true;
     }
 
-    private void copyLog(int position) {
+    private void copyLog(LogcatInfo info) {
         ClipboardManager manager = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
         if (manager != null) {
-            manager.setPrimaryClip(ClipData.newPlainText("log", mAdapter.getItem(position).getContent()));
+            manager.setPrimaryClip(ClipData.newPlainText("log", info.getContent()));
             LogcatUtils.toast(LogcatActivity.this, R.string.logcat_copy_succeed);
         } else {
             LogcatUtils.toast(LogcatActivity.this, R.string.logcat_copy_fail);
         }
     }
 
-    private void shareLog(int position) {
+    private void shareLog(LogcatInfo info) {
         Intent intent = new Intent(Intent.ACTION_SEND);
         intent.setType("text/plain");
-        intent.putExtra(Intent.EXTRA_TEXT, mAdapter.getItem(position).getContent());
+        intent.putExtra(Intent.EXTRA_TEXT, info.getContent());
         startActivity(Intent.createChooser(intent, getResources().getString(R.string.logcat_options_share)));
     }
 

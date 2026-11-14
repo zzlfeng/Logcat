@@ -203,19 +203,22 @@ final class LogcatAdapter extends RecyclerView.Adapter<LogcatAdapter.ViewHolder>
     }
 
     /**
-     * 删除某条数据
+     * 按对象删除某条数据（避免异步弹窗期间列表裁剪导致索引失效或越界）
      */
-    void removeItem(int position) {
-        LogcatInfo info = mShowData.remove(position);
-        if (mAllData != mShowData && info != null) {
+    void removeItem(LogcatInfo info) {
+        if (info == null) {
+            return;
+        }
+        int index = mShowData.indexOf(info);
+        if (index != -1) {
+            mShowData.remove(index);
+            notifyItemRemoved(index);
+        }
+        if (mAllData != mShowData) {
             mAllData.remove(info);
         }
-        // 两个列表都已删除该条目，状态可直接清理
-        if (info != null) {
-            mExpandSet.delete(info.hashCode());
-            mScrollXSet.delete(info.hashCode());
-        }
-        notifyItemRemoved(position);
+        mExpandSet.delete(info.hashCode());
+        mScrollXSet.delete(info.hashCode());
     }
 
     /**
